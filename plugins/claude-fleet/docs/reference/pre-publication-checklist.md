@@ -7,73 +7,117 @@ make; steps 1–3 are cheap and fail loudly, so run them first and stop on the f
 Working directory for every `npm` command below is `plugins/claude-fleet`. Repository-root commands
 are marked.
 
-> ⛔ **Read [Unresolved blockers](#unresolved-blockers) before anything else.** As of the scan
-> recorded at the bottom of this file, this repository is **NOT clear to publish**: the git history
-> carries the material the working tree was cleaned of. That is not fixable by editing a file, and
-> nothing in steps 1–6 or 8–12 detects it, because every one of those gates reads the working tree.
-> **Only step 7 sees it, and only if you run it.**
+> **Both history blockers are cleared** in the repository this file ships from — see [Cleared
+> blockers](#cleared-blockers). What cleared them was a rewrite, not an edit, and a rewrite is only
+> as good as the ref it did not reach: read [the PR-ref trap](#-the-pr-ref-trap-a-rewrite-does-not-reach-refspull)
+> before assuming a clean `main` means a clean repository. Step 7 is still the only step that looks at
+> history at all; steps 1–6 and 8–12 read the working tree and would pass over a contaminated one.
 
 ---
 
-## Unresolved blockers
+## Cleared blockers
 
-### BLOCKER 1 — git history publishes the plaintext denylist
+### CLEARED — git history published the plaintext denylist
 
-Early commits carry a version of `plugins/claude-fleet/docs/reference/contract.md` in which the
-redaction denylist is written out **in plain text**, before it was replaced by the hashed fixtures.
-Those blobs name, verbatim, essentially the whole of what
+Early commits carried a version of `plugins/claude-fleet/docs/reference/contract.md` in which the
+redaction denylist was written out **in plain text**, before it was replaced by the hashed fixtures.
+Those blobs named, verbatim, essentially the whole of what
 `test/fixtures/redaction-{exact,proper}.txt` exists to keep hashed — identifiers, people, the
 company's domain, its email shape, and the phrase that discloses what the source product is.
 
-The blob and commit SHAs, the count, and the shapes are deliberately **not written down here.** They
-are a working index to the plaintext, and this file ships in the published tree; step 7 finds all of
-it from a clean checkout in one command, which is how it was found in the first place. Run step 7 and
-read its output privately.
+**Disposition: cleared by squashing to a single root commit.** The history had no external value —
+one author, no forks, no published releases, nothing referencing a SHA — so `git commit-tree` on the
+merged tree produced a parentless commit with byte-identical content, and that became `main`.
 
-It was redacted in the working tree by the commit that added the prose gates. Every commit before that
-still contains it, and `git clone` ships all of them. `git log -p`, `git cat-file`, and GitHub's own
-blob and compare views all expose it without effort.
+Two things about the diagnosis are worth keeping, because both cost a full re-scan to learn:
 
-**Disposition: unresolved. Requires a history rewrite, and that is the operator's decision.** There is
-no edit to any file that fixes it. The two realistic options:
+- ⛔ **The contaminated commits were ancestors of `main`, not of the feature branch.** Squashing the
+  branch before merging would have cleared nothing. Check which ref actually carries the blobs
+  (`git log --all --find-object=<sha>`) before choosing what to rewrite.
+- ⛔ **A scan that reports CLEAN is worthless unless it reports how much it read.** The first pass over
+  this history returned CLEAN because a path bug made every lookup fail and a `catch { continue }`
+  swallowed it. Any scan here must print `blobs read` and `read failures` and treat a non-zero failure
+  count as *proved nothing*, never as *found nothing*.
 
-- **Squash to a single root commit** (`git checkout --orphan public && git commit && git branch -M
-  main`) — simplest, and the history has no external value yet: 20 commits, one author, no forks, no
-  published releases, nothing referencing a SHA.
-- **`git filter-repo --path plugins/claude-fleet/docs/reference/contract.md --invert-paths`** followed
-  by re-adding the current file, if the rest of the history is worth keeping.
+### CLEARED — git history carried a contributor's absolute path and the source repo's directory name
 
-After either, re-run the history scan in step 7 and confirm it is clean **before** the repository is
-made public. A history rewrite after publication does not help: clones and GitHub's cached views keep
-the old objects.
+A historical blob of `plugins/claude-fleet/src/config/paths.mjs` carried a comment naming both a
+contributor machine's absolute path and the source checkout's directory name, across a long run of
+consecutive commits. Fixed in the working tree long before; cleared from history by the same rewrite.
 
-### BLOCKER 2 — git history carries a contributor's absolute path and the source repo's directory name
+### ⛔ The PR-ref trap — a rewrite does not reach `refs/pull/*`
 
-A historical blob of `plugins/claude-fleet/src/config/paths.mjs` carries a comment reading
-`Verified against real directories: <Windows drive path> → …`, which names both a contributor
-machine's absolute path and the source checkout's directory name. It is present in a long run of
-consecutive commits. **Fixed in the working tree; still in history.** SHAs withheld for the same
-reason as BLOCKER 1 — step 7 prints them. Same remedy as BLOCKER 1, and the same rewrite clears both
-at once.
+**A squashed `main` does not make a repository clean.** GitHub keeps every pull request's head under
+`refs/pull/<n>/head` permanently. Those refs survive branch deletion, survive force-push, and are
+fetchable by anyone who can read the repository:
 
-### OPEN QUESTION — the pattern fixture still publishes five denied strings
+```bash
+git ls-remote <remote> 'refs/pull/*'          # they are listed
+git fetch <remote> refs/pull/1/head           # and the whole pre-rewrite history comes back
+git rev-list --count FETCH_HEAD               # every commit the squash "removed"
+```
+
+So **any repository that has ever hosted a pull request from a contaminated branch keeps that history
+for good**, whatever `main` says afterwards. Merging through a PR and squashing afterwards leaves the
+dirty commits behind by construction — verified here, not theorised.
+
+**The consequence for publication: the public repository must be seeded, never converted.** Push the
+rewritten root commit into a repository that has never held the old history in any form — no branch,
+no PR — and open any subsequent PR from a branch cut off that root. A repository that hosted the
+pre-rewrite PRs stays private permanently and becomes the working history.
+
+**Verify the seed before publishing** — every ref, not just `main`:
+
+```bash
+git ls-remote <remote>                        # expect main, working branches, and nothing else
+git ls-remote <remote> 'refs/pull/*'          # expect empty, or only PRs cut from the clean root
+git rev-list --count <remote>/main            # expect the number of commits you intended
+```
+
+### RESOLVED — the five plaintext strings in the pattern fixture are publishable
 
 `test/fixtures/redaction-patterns.txt` is, by design, readable regexes. **Five** of them spell out what
 they deny, and their own `why` column says so. Rows are keyed by that `why` column rather than by line
 number, so this table cannot go stale when the fixture is reordered:
 
-| its `why` column reads | why that is a leak |
+| its `why` column reads | what a reader learns from it |
 | --- | --- |
-| "discloses what the source product is" | it is the product category, in plain text |
-| "the source project's dev host convention" | a private dev-host convention (contract §1: infrastructure) |
-| "a source-repo directory" (three separate patterns) | names a private source path |
+| "discloses what the source product is" | the source product's category |
+| "the source project's dev host convention" | a local dev-host naming scheme |
+| "a source-repo directory" (three separate patterns) | three directory names |
 
-Read the file itself for the exact strings; they are not repeated here, for the same reason they should
-not be in the fixture. Three token-shaped siblings (the company domain, the real issue-key prefix, and
-four employees' first names) were removed in this scan and replaced by hashes — see
-[Findings](#findings), F1. These five cannot be, because the hash check runs over single tokens and
-every distinctive word in them is a generic English or filesystem word on its own. Keeping them
-publishes the product category and a dev-host convention next to a `LICENSE` that names the company.
+**Disposition: accepted, no change.** They are published knowingly, for these reasons, in this order:
+
+1. **The company is already named, unavoidably and correctly.** `LICENSE` names the copyright holder
+   and `README.md` names the install address — contract §1 sanctions both, and neither is optional: a
+   reader cannot install the plugin without the address. So none of these five strings *reveals* whose
+   tool this is. They can only add detail to something already established on the first screen.
+2. **The detail they add is public.** The product category is on the company's own website. The
+   dev-host scheme is a convention shared with much of the Node ecosystem. The three directory names
+   are the conventional monorepo layout half of GitHub uses.
+3. **None of them is a secret of the kind §1 exists to protect.** Not a credential, not an unfixed
+   defect, not a customer, not an internal URL, not a path into any system. §1's categories are
+   people, keys, hosts, absolute paths and product mechanism; these are none of those.
+4. **The alternative costs more than it buys.** Hashing them needs a *bigram* check — the hash lookup
+   runs over single tokens, and every distinctive word in these five is a generic English or
+   filesystem word alone (`password`, `manager`, `app`, `localhost`, `apps`, `web`). That is a change
+   to the enforcement mechanism, and it would be spent hiding facts a reader already has.
+
+**Measured before deciding** (adjacent-token pairs, over every tracked file): four of the five — the
+product category, the dev-host convention and two of the three directory rows — match **nothing** in
+this tree. The third directory row matches two test files using a generic workspace fixture layout. So
+the conversion was cheap; it was rejected on the argument above, not on difficulty.
+
+⛔ The first draft of that sentence named the two directory rows outright, and **the gate rejected this
+very file for it** — which is the rule working, one paragraph after the rule was written down. The
+strings are not repeated here for the same reason they should not be in the fixture; read the fixture
+when you need them.
+
+⛔ **What this disposition does NOT license.** It covers these five rows and nothing else. A new
+plaintext row naming a person, a host, a key shape, a customer or a product *mechanism* is a leak
+whatever this section says — the reasoning above turns entirely on the five being public, generic and
+already implied by `LICENSE`. Anything expressible as ONE token still goes into
+`redaction-exact.txt` as a hash, which the fixture's own header requires.
 
 **RESOLVED — the approval bot.** A sixth row named a third-party review bot. This checklist previously
 said to hash it, "no mechanism change needed, do this one regardless of what is decided about the
@@ -87,17 +131,16 @@ rest". ⛔ **That advice was wrong twice over, and acting on it would have broke
   a bare one. It published a vendor name in the file that exists to prevent leaks, and denied nothing.
 
 Replaced by the SHAPE `\w+\[bot\]`, which names no vendor and catches *any* bot handle — strictly more
-coverage, no mechanism change. `docs-redaction.test.mjs` now asserts **every** pattern matches one of
-its own probes and refuses a row that has none, so an inert guard cannot ship again.
+coverage, no mechanism change.
 
-**Decide the rest before publishing:**
-
-1. Teach `tokensOf` / the gate a hashed **bigram** check, then hash the product-category phrase and the
-   dev-host convention and delete the plaintext lines. Correct, and it is a change to the enforcement
-   mechanism, so it needs its own review.
-2. Accept the three "a source-repo directory" patterns — conventional monorepo directory names that
-   identify nothing — or hash them too.
-3. If any of the five is kept, record here explicitly what is considered publishable and why.
+⛔ The obvious regression test for that — "every pattern must match a sample" — **cannot be written
+here, and the first attempt at it was itself a leak.** A sample matching the dev-host row *is* the
+dev-host convention; a sample matching the product-category row *is* the product category. Writing
+them put both denied strings into `docs-redaction.test.mjs` in plain text, where no gate would have
+seen them, because nothing scans `test/`. Caught by scanning the squashed tree before it was pushed.
+The check is therefore **static, on the pattern source**: a word boundary sitting against a literal
+non-word character can only hold when the surrounding *text* supplies a word character, which is
+exactly the defect above. It needs no sample and publishes nothing.
 ---
 
 ## The checklist
