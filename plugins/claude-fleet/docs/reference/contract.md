@@ -27,11 +27,21 @@ issue-key prefix, its source-tree directories, its infrastructure and vendor nam
 path from a contributor's machine. Use the placeholders above instead.
 
 **One exemption, and only one:** the name of the organisation that *publishes* this repository may
-appear in legal and package-identity metadata — `LICENSE`, the two `.claude-plugin` manifests, and the
-install command in `README.md` — because a copyright holder and an install path are not leaks, and a
-reader cannot install the plugin without the address. It appears nowhere else: not in a playbook, not
-in an adapter, not in a doc, not in a code comment. The redaction gate scans `.md`/`.txt` prose, so
-this exemption is a rule for authors rather than something the gate can check.
+appear in legal and package-identity metadata, in exactly six files — `LICENSE` (the copyright
+holder), the two `.claude-plugin` manifests, the install command in `README.md`, the schema's
+canonical `$id` URL in `schema/fleet.config.schema.json`, and `scripts/build-schema.mjs` which
+generates that `$id` — because a copyright holder, an install path and a schema identifier are not
+leaks, and a reader cannot install the plugin without the address. The redaction fixtures are a
+seventh case by construction: an allowlist has to quote what it allows. It appears nowhere else: not
+in a playbook, not in an adapter, not in a doc, not in a code comment.
+
+⛔ This used to say four files and end "It appears nowhere else", which was **not true of the tree it
+describes** — the schema `$id` and its generator had carried the name since the schema was generated,
+and nothing noticed because the prose gate reads only `.md`/`.txt` under four directories. The
+manifests were outside every gate for the same reason. So the exemption is no longer a rule for
+authors: `docs-redaction.test.mjs` walks **every file `git` will publish** and fails on a denied
+identifier in any file not on the list above. Adding a seventh file means changing that list, which
+is a change to this exemption and needs the argument the first six got.
 
 The enforcement is `test/docs-redaction.test.mjs` + `test/playbook-brands.test.mjs`, and the token
 list lives **hashed** in `test/fixtures/redaction-{exact,proper}.txt` — a published plain-text

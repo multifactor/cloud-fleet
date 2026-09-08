@@ -12,9 +12,10 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
+import { execFileSync } from 'node:child_process'
 
 import {
-  ROOT, FIXTURES, hashToken, readHashes, readPatterns, readAllowed, proseFiles, rel,
+  ROOT, REPO, FIXTURES, hashToken, readHashes, readPatterns, readAllowed, proseFiles, rel,
   stripExampleBlocks, stripAllowed, tokensOf, lineOf, isAdapter,
 } from './helpers/prose.mjs'
 
@@ -64,6 +65,52 @@ test('no pattern contains an inert word boundary — a guard that cannot match i
       )
     }
   }
+})
+
+test('the publisher-name exemption is enforced, not just asserted — over EVERY tracked file', () => {
+  // ⛔ contract §1 grants exactly one exemption (the publishing organisation's name, in legal and
+  // package-identity metadata) and then says "It appears nowhere else". Nothing checked that. The
+  // prose gate reads `.md`/`.txt` under four directories, so the two `.claude-plugin` manifests, the
+  // generated schema and the build script were all outside every gate — and the claim in §1 was
+  // simply untrue of the tree it describes.
+  //
+  // This walks what git will actually publish. A denied identifier in a file that is not on the
+  // sanctioned list is a leak; the same identifier ON the list is the exemption working as designed.
+  const tracked = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], {
+    cwd: REPO, encoding: 'utf8',
+  }).trim().split(/\r?\n/).filter(Boolean)
+  assert.ok(tracked.length > 100, `expected the whole tree, got ${tracked.length} files — the listing failed`)
+
+  // §1's list, as paths. Keep this in step with the contract: a new entry here is a change to the
+  // exemption and needs the same argument the original four did.
+  const SANCTIONED = new Set([
+    'LICENSE',                                              // the copyright holder
+    'README.md',                                            // the install command names the address
+    '.claude-plugin/marketplace.json',                      // package identity
+    'plugins/claude-fleet/.claude-plugin/plugin.json',      // package identity
+    'plugins/claude-fleet/schema/fleet.config.schema.json', // the schema's canonical $id URL
+    'plugins/claude-fleet/scripts/build-schema.mjs',        // which generates that $id
+  ])
+  // The fixtures hold the denylist and the allowlist; they quote what they guard by construction.
+  const isFixture = f => /test\/fixtures\/redaction-[\w-]+\.txt$/.test(f)
+
+  const leaks = []
+  for (const file of tracked) {
+    if (SANCTIONED.has(file) || isFixture(file)) continue
+    let text
+    try {
+      text = fs.readFileSync(path.join(REPO, file), 'utf8')
+    } catch {
+      continue // binary or unreadable: not prose, nothing to read
+    }
+    const seen = new Set()
+    for (const tok of tokensOf(stripAllowed(text, ALLOWED))) {
+      if (!EXACT.has(hashToken(tok)) || seen.has(tok.toLowerCase())) continue
+      seen.add(tok.toLowerCase())
+      leaks.push(`${file}: denied identifier (starts "${tok.slice(0, 2)}…", ${tok.length} chars)`)
+    }
+  }
+  assert.deepEqual(leaks, [], `a denied identifier appears outside contract §1's sanctioned list:\n  ${leaks.join('\n  ')}`)
 })
 
 test('no published prose file contains a denied token, path, key or tool identifier', () => {

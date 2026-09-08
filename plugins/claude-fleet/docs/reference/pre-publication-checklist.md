@@ -436,7 +436,10 @@ decision (F2, F3).**
    until this is done.**
 2. Decide F2 (the **five** remaining plaintext patterns — the sixth is resolved above) and F3 (the
    field-note vocabulary).
-3. Decide F4 (the organisation name in the schema `$id`) and F7 (the model names in the trailers).
+3. ~~Decide F4~~ — **resolved**: contract §1 now names all six sanctioned files (it claimed four and
+   said "nowhere else", which was untrue of its own tree), and the exemption is enforced over every
+   tracked file rather than left to authors. ~~F7~~ — **resolved by the rewrite**: the history is two
+   commits, both naming one public model.
 4. ~~Extend `proseFiles()` to cover `blog/`~~ — **done**: the gate walks `blog/` (`test/helpers/prose.mjs`).
 5. Re-run steps 2 and 3 and confirm both are green on the rewritten history.
 
