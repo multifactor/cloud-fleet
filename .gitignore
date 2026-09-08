@@ -1,0 +1,13 @@
+node_modules/
+*.log
+.DS_Store
+# per-clone project overrides are never committed
+.fleet/config.local.json
+# local scratch
+/scratch/
+
+# scratch a test could only create by writing outside its temp dir — never commit it
+/plugins/claude-fleet/[0-9]/
+
+# throwaway debug harnesses a session writes while chasing a failure — never published
+/plugins/claude-fleet/.tmp-dbg/

@@ -1,0 +1,22 @@
+# sha256(lowercased token), first 16 hex chars — one per line.
+# The tokens themselves are NOT stored: a published denylist would leak the very names it guards.
+# Any occurrence of one of these tokens, in any case, fails the redaction test.
+35308b044b59cb91
+424f22be65be2246
+4455138c4b5ea68d
+5205a3b5e21d9fb2
+5a5eb127ee2c9290
+61ea0803f8853523
+690d0cc4705d8e21
+72a889447854689f
+79f37fa59d92903c
+866e1f18c9370d5d
+a44b974295a2044c
+a72f04caa6727621
+b6086e6137a8d3b5
+c424d8d8a47d3d88
+ce9da497f682400f
+d5a5d66b94e8da0c
+dd54cc9950997fb0
+29df0906e1730ea2
+119c9ae6f9ca741b

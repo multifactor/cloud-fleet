@@ -1,0 +1,14 @@
+{
+  "name": "claude-qa-skills",
+  "description": "QA skills for Claude Code: fan out parallel sessions over git worktrees and drive them from any issue tracker; review PRs for edge cases and file each gap as a gated ticket.",
+  "owner": { "name": "Multifactor" },
+  "plugins": [
+    {
+      "name": "claude-fleet",
+      "description": "Run N isolated Claude Code sessions in parallel, one git worktree each, driven by tickets from Linear, Jira, GitHub Issues, Asana or Trello (or none). /fleet works tickets; /fleet-check reviews PRs and files gated tickets for it. Windows, macOS and Linux.",
+      "source": "./plugins/claude-fleet",
+      "category": "development",
+      "tags": ["worktrees", "parallel-sessions", "qa", "issue-tracker", "linear", "jira", "github", "asana", "trello", "tmux", "windows-terminal"]
+    }
+  ]
+}

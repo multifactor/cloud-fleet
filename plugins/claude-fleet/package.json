@@ -1,0 +1,33 @@
+{
+  "name": "claude-fleet",
+  "version": "0.1.0",
+  "description": "Parallel Claude Code sessions over git worktrees, driven by any issue tracker; plus an edge-case PR reviewer that files gated tickets.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "claude-fleet": "bin/claude-fleet.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "playbooks",
+    "trackers",
+    "commands",
+    "hooks",
+    "schema",
+    "docs",
+    ".claude-plugin"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "test:integration": "node --test",
+    "test:wt": "node --test test/backend-conformance.test.mjs",
+    "schema:build": "node scripts/build-schema.mjs",
+    "commands:render": "node scripts/render-commands.mjs",
+    "lint:redaction": "node --test test/docs-redaction.test.mjs test/playbook-brands.test.mjs"
+  },
+  "dependencies": {}
+}

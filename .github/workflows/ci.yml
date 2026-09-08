@@ -1,0 +1,47 @@
+name: ci
+on:
+  push: { branches: [main] }
+  pull_request:
+jobs:
+  unit:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [20, 22, 24]
+    runs-on: ${{ matrix.os }}
+    defaults: { run: { working-directory: plugins/claude-fleet } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "${{ matrix.node }}" }
+      - run: node --version
+      - run: npm test
+  redaction:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: plugins/claude-fleet } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm run lint:redaction
+  integration-tmux:
+    # tmux is NOT preinstalled on the macOS images and must not be assumed on Ubuntu either.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults: { run: { working-directory: plugins/claude-fleet } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: install tmux
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then brew install tmux; else sudo apt-get update && sudo apt-get install -y tmux; fi
+          tmux -V
+      - run: npm run test:integration
+        env: { FLEET_TEST_BACKEND: tmux }
+  # Windows Terminal conformance cannot run here: windows-latest has no Windows Terminal and no
+  # interactive desktop session. It is an author-verified local gate (`npm run test:wt`).

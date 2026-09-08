@@ -1,0 +1,17 @@
+# Regex patterns that are safe to publish verbatim (they name shapes, not secrets).
+# Format: <flags>\t<pattern>\t<why>   — flags is a JS RegExp flag string ("" or "i").
+#
+# ⛔ A pattern that spells out the thing it denies does not belong here — it publishes the leak in
+# the file that exists to prevent it. Anything expressible as ONE token (a name, a domain's
+# distinctive label, an issue-key prefix) goes into redaction-exact.txt as a hash instead, which
+# catches it in every context. Only patterns whose distinctive part is a generic word or a shape
+# survive below.
+i	\bapp\.localhost\b	the source project's dev host convention
+	C:\\Users\\	a machine-specific absolute path
+	C:\\projects\\	a machine-specific absolute path
+i	\w+\[bot\]	any review-bot handle — the SHAPE, so this file names no vendor (and the old name-based row could not match a bare handle: a trailing \b after "]" needs a word char after it)
+i	\bpassword manager\b	discloses what the source product is
+i	\bapps/(web|api|extension)/	a source-repo directory
+i	\bpackages/ui/	a source-repo directory
+i	\be2e/harness\b	a source-repo directory
+i	\bmcp__[a-z_]+	an MCP tool identifier (adapters name tools on Call: lines only)

@@ -1,0 +1,9 @@
+# sha256(lowercased token), first 16 hex chars — one per line.
+# Ordinary English words that are also internal product names. Only a CAPITALISED use that is not
+# at the start of a sentence fails, so generic prose ("a checkpoint in the sweep") stays legal.
+119c9ae6f9ca741b
+47320987f9a49d5b
+4b4ac4cff08f3a5b
+4bd77cffb0da8cbd
+9748358c94bed99b
+d0960501f8971be8

@@ -1,0 +1,1656 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/multifactor-apps/claude-qa-skills/main/plugins/claude-fleet/schema/fleet.config.schema.json",
+  "title": "claude-fleet configuration",
+  "description": "Project layer: <repo>/.fleet/config.json. User layer: per-machine claude-fleet/config.json. Every key declares a scope; a user-scope key in a committed file is ignored, a secret one is an error.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Config file format version.",
+      "default": 1,
+      "x-scope": "project"
+    },
+    "$pinned": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      },
+      "description": "Project keys the user layer may not override (env and CLI still win, with a warning).",
+      "default": [],
+      "x-scope": "project"
+    },
+    "repo": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Repo name used in worktree folder names.",
+          "x-scope": "project",
+          "x-derived": "basename of the primary checkout"
+        },
+        "worktreeParent": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Directory that receives the session worktrees.",
+          "x-scope": "user",
+          "x-derived": "dirname of the primary checkout"
+        },
+        "sessionDirTemplate": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Folder name of working session n.",
+          "default": "{repo}-session-{n}",
+          "x-scope": "project"
+        },
+        "slotDirTemplate": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Folder name of a testing slot's worktree; {branch} is its slot branch.",
+          "default": "{repo}-{branch}",
+          "x-scope": "project"
+        },
+        "checkerDirTemplate": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Folder name of a checker session's worktree.",
+          "default": "{repo}-check-{slice}",
+          "x-scope": "project"
+        },
+        "remote": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Git remote worktrees branch from.",
+          "default": "origin",
+          "x-scope": "project"
+        },
+        "baseBranch": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Branch new work starts from and PRs target.",
+          "default": "main",
+          "x-scope": "project"
+        }
+      }
+    },
+    "commands": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bootstrap": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Command that installs a freshly created worktree (dependencies, generated files).",
+          "x-scope": "project",
+          "x-required": true
+        },
+        "devServer": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Command a testing session runs to serve the app. Required when testing.count > 0.",
+          "x-scope": "project"
+        },
+        "test": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Test command a session runs before Push-PR (optional).",
+          "x-scope": "project"
+        },
+        "build": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Build command (optional).",
+          "x-scope": "project"
+        },
+        "lint": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Lint command (optional).",
+          "x-scope": "project"
+        },
+        "typecheck": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Typecheck command (optional).",
+          "x-scope": "project"
+        },
+        "migrate": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Database migration command (optional).",
+          "x-scope": "project"
+        },
+        "stopAll": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The repo-wide \"stop every server\" command. Named so sessions can be told never to run it.",
+          "x-scope": "project"
+        }
+      }
+    },
+    "devServer": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "urlTemplate": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "URL of a dev-server slot. Placeholders: {branch} {slot} {port} {repo}.",
+          "default": "http://localhost:{port}",
+          "x-scope": "project"
+        },
+        "portBase": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Port of slot 1 when urlTemplate uses {port}.",
+          "default": 3000,
+          "x-scope": "project"
+        },
+        "portStride": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Port increment per slot.",
+          "default": 1,
+          "x-scope": "project"
+        },
+        "probes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "expectStatus": {
+                "type": "string"
+              },
+              "expectNotStatus": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              },
+              "timeoutSec": {
+                "type": "integer"
+              },
+              "dependsOnPrevious": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "path"
+            ]
+          },
+          "description": "HTTP probes that decide a slot is up. Only 2xx/3xx counts; a dead slot behind a per-branch-host proxy answers 404.",
+          "default": [
+            {
+              "path": "/",
+              "expectStatus": "2xx,3xx",
+              "timeoutSec": 45
+            }
+          ],
+          "x-scope": "project"
+        },
+        "processes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "match": {
+                "type": "string"
+              },
+              "notMatch": {
+                "type": "string"
+              },
+              "min": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "name",
+              "match"
+            ]
+          },
+          "description": "Process shapes a healthy slot must show. Empty = judge by probes only.",
+          "default": [],
+          "x-scope": "project"
+        },
+        "serverProcessPattern": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Regex identifying a dev-server process. A rogue server inside a working worktree is tree-killed by the supervisor, so this must be precise.",
+          "x-scope": "project",
+          "x-derived": "the entry file of commands.devServer resolved through package.json scripts"
+        },
+        "routeListCommand": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Command listing registered per-branch hosts (optional).",
+          "x-scope": "project"
+        },
+        "softFaultStrikes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Consecutive soft-fault scans before a slot is restarted. Two killed a healthy server that was still compiling.",
+          "default": 4,
+          "x-scope": "project"
+        }
+      }
+    },
+    "testing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether a local dev-server pool exists at all.",
+          "default": true,
+          "x-scope": "project"
+        },
+        "base": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Slot 1 branch name; slot n is \"<base>-<n>\".",
+          "default": "testing",
+          "x-scope": "project"
+        },
+        "maxSlots": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Largest pool the slot table can serve.",
+          "default": 4,
+          "x-scope": "project"
+        },
+        "count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Slots to run (0 = no local pool; captures go to cloud or none).",
+          "default": 1,
+          "minimum": 0,
+          "x-scope": "either"
+        },
+        "branches": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "Slot branch names.",
+          "x-scope": "project",
+          "x-derived": "from testing.base and testing.maxSlots"
+        },
+        "lock": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "staleMinutes": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "description": "A slot lock older than this may be stolen. Staleness is decided by timestamp only.",
+              "default": 12,
+              "x-scope": "project"
+            },
+            "probeTimeoutSec": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "description": "Probe timeout before handing out a slot. A recompile after a merge takes this long.",
+              "default": 45,
+              "x-scope": "project"
+            }
+          }
+        }
+      }
+    },
+    "install": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "concurrencyCap": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Wave size for parallel installs. Env may only lower it.",
+          "default": 4,
+          "minimum": 1,
+          "x-scope": "either"
+        },
+        "perInstallGb": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Measured peak RAM of one install of this repo.",
+          "default": 4,
+          "x-scope": "project"
+        },
+        "reservePhysicalGb": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Physical RAM kept free while pacing installs.",
+          "default": 8,
+          "x-scope": "user"
+        },
+        "settleSec": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Quiet gap between install waves so writeback and file cache drain.",
+          "default": 30,
+          "x-scope": "user"
+        },
+        "spawnStaggerSec": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Delay between window spawns / worktree adds.",
+          "default": 3,
+          "x-scope": "user"
+        },
+        "holdPollSec": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Poll interval while waiting for RAM headroom.",
+          "default": 20,
+          "x-scope": "user"
+        },
+        "maxHoldSec": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Run-wide budget for holding installs; then proceed with a warning.",
+          "default": 600,
+          "x-scope": "user"
+        },
+        "readyFlag": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Sentinel file written in a worktree after a verified install.",
+          "default": ".fleet-ready",
+          "x-scope": "project"
+        },
+        "proof": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "compare-primary",
+                "exists",
+                "explicit"
+              ],
+              "description": "How an install is proven complete. compare-primary snapshots the primary checkout per lockfile hash.",
+              "default": "compare-primary",
+              "x-scope": "project"
+            },
+            "tolerance": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "description": "Fraction of the reference counts a worktree must reach.",
+              "default": 0.98,
+              "x-scope": "project"
+            },
+            "probeFiles": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "description": "Files that must exist (proof.mode explicit).",
+              "default": [],
+              "x-scope": "project"
+            }
+          }
+        },
+        "donor": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Clone node_modules from a warm donor instead of installing.",
+              "default": false,
+              "x-scope": "either"
+            },
+            "path": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Donor location.",
+              "x-scope": "user",
+              "x-derived": "<stateDir>/nm-donor"
+            }
+          }
+        },
+        "junctions": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "auto",
+                "none",
+                "explicit"
+              ],
+              "description": "Workspace links recreated after a donor clone. auto derives them from package.json workspaces.",
+              "default": "auto",
+              "x-scope": "project"
+            },
+            "extra": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "link": {
+                    "type": "string"
+                  },
+                  "target": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "link",
+                  "target"
+                ]
+              },
+              "description": "Additional links.",
+              "default": [],
+              "x-scope": "project"
+            }
+          }
+        }
+      }
+    },
+    "services": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "docker": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "required": {
+              "type": "boolean",
+              "description": "Whether the supervisor should start Docker when it is down.",
+              "default": false,
+              "x-scope": "project"
+            },
+            "startCommand": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "How to start Docker on this machine.",
+              "x-scope": "user",
+              "x-derived": "platform default"
+            }
+          }
+        },
+        "containers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "startCommand": {
+                "type": "string"
+              },
+              "healthHost": {
+                "type": "string"
+              },
+              "healthPort": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "name"
+            ]
+          },
+          "description": "Containers the fleet needs; the supervisor repairs them.",
+          "default": [],
+          "x-scope": "project"
+        }
+      }
+    },
+    "emulator": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether a shared Android emulator pool exists.",
+          "default": false,
+          "x-scope": "project"
+        },
+        "slots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "avd": {
+                "type": "string"
+              },
+              "port": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "avd",
+              "port"
+            ]
+          },
+          "description": "AVDs in the pool; serial is emulator-<port>.",
+          "default": [],
+          "x-scope": "project"
+        },
+        "idleSeconds": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Idle time before the reaper shuts an emulator down.",
+          "default": 300,
+          "x-scope": "project"
+        },
+        "lockStaleMinutes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Emulator lock staleness (timestamp only).",
+          "default": 45,
+          "x-scope": "project"
+        },
+        "sdkRoot": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Android SDK root.",
+          "x-scope": "user",
+          "x-derived": "ANDROID_HOME, ANDROID_SDK_ROOT, then the platform default"
+        }
+      }
+    },
+    "tracker": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Adapter id (linear, jira, github, asana, trello, or a project-supplied adapter).",
+          "x-scope": "project"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "mcp",
+            "manual",
+            "none"
+          ],
+          "description": "mcp = sessions call the tracker; manual = every op is queued to the outbox; none = tracker-less.",
+          "default": "mcp",
+          "x-scope": "either"
+        },
+        "scope": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The tracker's container: team / project / repo / workspace / board (the adapter says which).",
+          "x-scope": "project"
+        },
+        "settings": {
+          "type": "object",
+          "description": "Adapter-declared extra settings (see the adapter's config[] list).",
+          "default": {},
+          "x-scope": "project"
+        },
+        "states": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "in-progress": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Name of the in-progress state.",
+              "x-scope": "project",
+              "x-derived": "the adapter's promptDefault"
+            },
+            "in-review": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Name of the in-review state.",
+              "x-scope": "project",
+              "x-derived": "the adapter's promptDefault"
+            },
+            "cancelled": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Name of the cancelled state.",
+              "x-scope": "project",
+              "x-derived": "the adapter's promptDefault"
+            }
+          }
+        },
+        "defaultAssignee": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "\"me\" = the authenticated tracker user; otherwise a name or email the adapter resolves.",
+          "default": "me",
+          "x-scope": "user"
+        },
+        "queue": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "scope": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Container the auto-refill queue is read from.",
+              "x-scope": "project"
+            },
+            "assignee": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Assignee filter of the auto-refill queue.",
+              "x-scope": "project"
+            },
+            "state": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "State filter of the auto-refill queue.",
+              "x-scope": "project"
+            }
+          }
+        },
+        "byKeyPattern": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "pattern": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "pattern",
+              "id"
+            ]
+          },
+          "description": "Reserved for multi-tracker repos; single-tracker only in v1.",
+          "default": [],
+          "x-scope": "project"
+        },
+        "rest": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "baseUrl": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "REST base URL for adapters whose ops need REST (self-hosted trackers).",
+              "x-scope": "project"
+            },
+            "tokenEnv": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "NAME of the env var holding the REST token. Never committed.",
+              "x-scope": "user",
+              "x-secret": true
+            }
+          }
+        }
+      }
+    },
+    "vcs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "branchPrefix": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Prefix of session branches.",
+          "x-scope": "user",
+          "x-derived": "slug of git config user.name"
+        },
+        "branchTemplate": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Session branch name.",
+          "default": "{prefix}/{key-lower}-{slug}",
+          "x-scope": "project"
+        },
+        "assetsBranchTemplate": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Orphan branch holding PR screenshots.",
+          "default": "assets-{key}",
+          "x-scope": "project"
+        },
+        "captureRefTemplate": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Throwaway ref a cloud capture worker checks out.",
+          "default": "capture/{key}",
+          "x-scope": "project"
+        },
+        "captureDirTemplate": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "In-worktree capture spec directory.",
+          "default": ".fleet-capture/{key}",
+          "x-scope": "project"
+        },
+        "checkerBranchTemplate": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Branch of a checker session.",
+          "default": "check/{sweepId}/{slice}",
+          "x-scope": "project"
+        },
+        "pr": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "draft": {
+              "type": "boolean",
+              "description": "Open PRs as drafts.",
+              "default": true,
+              "x-scope": "project"
+            },
+            "createCommand": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Command that opens a PR (--draft appended from vcs.pr.draft).",
+              "default": "gh pr create",
+              "x-scope": "project"
+            }
+          }
+        },
+        "sensitivePaths": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "Globs workers must never read (a permission prompt parks a worker forever).",
+          "default": [],
+          "x-scope": "project"
+        },
+        "host": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "github",
+            "gitlab",
+            "other",
+            null
+          ],
+          "description": "Forge kind.",
+          "x-scope": "project",
+          "x-derived": "from the origin URL"
+        }
+      }
+    },
+    "capture": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "local",
+            "cloud",
+            "none"
+          ],
+          "description": "Where before/after screenshots are taken.",
+          "default": "local",
+          "x-scope": "either"
+        },
+        "loginUrlTemplate": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "URL that logs a capture browser in. Placeholders: {base} {account}.",
+          "x-scope": "project"
+        },
+        "accounts": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "Isolated capture identities (screenshots on a shared stack collide otherwise).",
+          "default": [],
+          "x-scope": "project"
+        },
+        "runner": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Command that runs a capture spec against {url}.",
+          "x-scope": "project"
+        },
+        "bootstrapScript": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Project-supplied script that brings the app up inside a cloud sandbox.",
+          "x-scope": "project"
+        },
+        "requiredEnv": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "Env var NAMES a cloud worker asserts non-empty before installing (values never printed).",
+          "default": [],
+          "x-scope": "project"
+        },
+        "allowlistHosts": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "Hosts a cloud sandbox must reach.",
+          "default": [],
+          "x-scope": "project"
+        }
+      }
+    },
+    "fleet": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "size": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Default number of working sessions.",
+          "x-scope": "user",
+          "x-derived": "clamp(1, floor((totalRam - install.reservePhysicalGb) / install.perInstallGb), cpus)"
+        },
+        "hardCeiling": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Never exceeded by auto-refill.",
+          "x-scope": "user",
+          "x-derived": "fleet.size + 2"
+        },
+        "agent": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "codex"
+          ],
+          "description": "Agent CLI a session runs.",
+          "default": "claude",
+          "x-scope": "either"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Model passed explicitly to every session (an inherited default once put a whole fleet on the wrong model).",
+          "default": "opus",
+          "x-scope": "either"
+        },
+        "queue": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "selector": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "State a ticket must be in to be picked up.",
+                  "x-scope": "project",
+                  "x-derived": "checker.ready.state, else the adapter's unstarted state"
+                },
+                "labels": {
+                  "type": [
+                    "array",
+                    "null"
+                  ],
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Labels a ticket must carry to be picked up.",
+                  "default": [],
+                  "x-scope": "project"
+                },
+                "excludeLabels": {
+                  "type": [
+                    "array",
+                    "null"
+                  ],
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Labels that hide a ticket from the queue.",
+                  "x-scope": "project",
+                  "x-derived": "[checker.triage.label]"
+                },
+                "group": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Container filter.",
+                  "x-scope": "project"
+                },
+                "assignee": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Assignee filter.",
+                  "x-scope": "project"
+                }
+              }
+            },
+            "source": {
+              "type": "string",
+              "enum": [
+                "tracker",
+                "findings",
+                "both"
+              ],
+              "description": "Where auto-refill reads tickets from.",
+              "default": "both",
+              "x-scope": "either"
+            },
+            "requireGate": {
+              "type": "boolean",
+              "description": "Refuse checker-filed tickets without a passed/waived gate verdict.",
+              "default": true,
+              "x-scope": "project"
+            }
+          }
+        }
+      }
+    },
+    "paths": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "stateDir": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Per-repo, per-machine state (registry, locks, flags, sweeps). Never the temp dir.",
+          "x-scope": "user",
+          "x-derived": "%LOCALAPPDATA% or $XDG_STATE_HOME / claude-fleet / <repoSlug>"
+        },
+        "artifactsDir": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Scratch review pages. Must not be inside any worktree.",
+          "x-scope": "user",
+          "x-derived": "<stateDir>/dev-pages"
+        },
+        "transcriptsDir": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Where Claude Code writes transcripts.",
+          "x-scope": "user",
+          "x-derived": "~/.claude/projects (honours CLAUDE_CONFIG_DIR)"
+        },
+        "nodeBinDirs": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "Extra directories holding a Node that satisfies the repo's engines.",
+          "default": [],
+          "x-scope": "user"
+        },
+        "pathPrepend": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "Directories prepended to PATH in every session.",
+          "default": [],
+          "x-scope": "user"
+        }
+      }
+    },
+    "terminal": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "windows-terminal",
+            "powershell",
+            "tmux",
+            "none"
+          ],
+          "description": "Terminal backend.",
+          "default": "auto",
+          "x-scope": "user"
+        },
+        "layout": {
+          "type": "string",
+          "enum": [
+            "windows",
+            "tiled-panes",
+            "pixel-grid"
+          ],
+          "description": "windows = one tab/window per session; tiled-panes = tmux tiled layout; pixel-grid = Windows-only multi-monitor tiling (opt-in).",
+          "default": "windows",
+          "x-scope": "user"
+        },
+        "tmux": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "session": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "tmux session name.",
+              "default": "fleet",
+              "x-scope": "user"
+            },
+            "socket": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "tmux socket name (-L), so the fleet never shares the user's server.",
+              "default": "fleet",
+              "x-scope": "user"
+            }
+          }
+        }
+      }
+    },
+    "notifications": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Command run on fleet events with $FLEET_EVENT and $FLEET_MESSAGE set.",
+          "x-scope": "user"
+        }
+      }
+    },
+    "playbooks": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "launcher": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Override of the launcher playbook (default: bundled, then .fleet/playbooks/launcher.md).",
+          "x-scope": "project"
+        },
+        "session": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Override of the session playbook.",
+          "x-scope": "project"
+        },
+        "testing": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Override of the testing playbook.",
+          "x-scope": "project"
+        },
+        "cloudCapture": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Override of the cloud-capture runbook.",
+          "x-scope": "project"
+        },
+        "check": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Override of the checker playbook.",
+          "x-scope": "project"
+        },
+        "checkAudit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Override of the audit playbook.",
+          "x-scope": "project"
+        }
+      }
+    },
+    "checker": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "triage": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Label a freshly filed ticket carries until promoted.",
+              "default": "triage",
+              "x-scope": "project"
+            },
+            "state": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Optional triage state (when the tracker has one).",
+              "x-scope": "project"
+            }
+          }
+        },
+        "ready": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "state": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "State a promoted ticket is moved to.",
+              "x-scope": "project",
+              "x-derived": "the adapter's unstarted state"
+            },
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Optional label a promoted ticket gains.",
+              "x-scope": "project"
+            }
+          }
+        },
+        "provenanceLabel": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Label marking checker-filed tickets.",
+          "default": "filed-by:fleet-check",
+          "x-scope": "project"
+        },
+        "gate": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "labels": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pending": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Gate label: not yet audited.",
+                  "default": "gate:pending",
+                  "x-scope": "project"
+                },
+                "passed": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Gate label: real, fix verified or absent.",
+                  "default": "gate:passed",
+                  "x-scope": "project"
+                },
+                "failed": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Gate label: false positive or already fixed.",
+                  "default": "gate:failed",
+                  "x-scope": "project"
+                },
+                "uncertain": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Gate label: could not decide.",
+                  "default": "gate:uncertain",
+                  "x-scope": "project"
+                },
+                "disputed": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Gate label: a fleet session refuted the diagnosis.",
+                  "default": "gate:disputed",
+                  "x-scope": "project"
+                },
+                "waived": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Gate label: a human admitted the ticket without an audit. Human-only.",
+                  "default": "gate:waived",
+                  "x-scope": "project"
+                }
+              }
+            }
+          }
+        },
+        "project": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Container checker tickets are filed into (id, name or URL).",
+          "x-scope": "project"
+        },
+        "projectPerSweep": {
+          "type": "boolean",
+          "description": "Create a fresh container per sweep.",
+          "default": false,
+          "x-scope": "project"
+        },
+        "projectNameTemplate": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Name of a per-sweep container.",
+          "default": "Edge-case sweep {date}",
+          "x-scope": "project"
+        },
+        "autoPromote": {
+          "type": "string",
+          "enum": [
+            "never",
+            "after-audit"
+          ],
+          "description": "never = a human promotes gate:passed tickets; after-audit = --auto promotes them.",
+          "default": "never",
+          "x-scope": "either"
+        },
+        "defaultMode": {
+          "type": "string",
+          "enum": [
+            "local",
+            "sessions",
+            "cloud"
+          ],
+          "description": "Where checker workers run.",
+          "default": "local",
+          "x-scope": "either"
+        },
+        "waveWidth": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Concurrent per-PR workers (\"auto\" or an integer).",
+          "default": "auto",
+          "x-scope": "user"
+        },
+        "assignee": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Default assignee of filed tickets.",
+          "default": "me",
+          "x-scope": "either"
+        },
+        "routing": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "paths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "assignee": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "paths",
+              "assignee"
+            ]
+          },
+          "description": "Route tickets by the defect's path. Emails here in a committed file are an org chart — prefer config.local.json.",
+          "default": [],
+          "x-scope": "either"
+        },
+        "a11y": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "umbrella": {
+              "type": "boolean",
+              "description": "File a11y findings as sub-issues of one umbrella.",
+              "default": true,
+              "x-scope": "project"
+            },
+            "umbrellaTitle": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Umbrella title.",
+              "default": "a11y",
+              "x-scope": "project"
+            },
+            "forcedPriority": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "description": "Priority every a11y-labelled ticket is forced to (null = none).",
+              "default": 4,
+              "minimum": 1,
+              "maximum": 4,
+              "x-scope": "project"
+            },
+            "labels": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "keyboard": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Keyboard-only findings.",
+                  "default": "a11y: keyboard",
+                  "x-scope": "project"
+                },
+                "screenReader": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Screen-reader findings.",
+                  "default": "a11y: screen reader",
+                  "x-scope": "project"
+                }
+              }
+            }
+          }
+        },
+        "screenshots": {
+          "type": "string",
+          "enum": [
+            "always",
+            "when-ui",
+            "never"
+          ],
+          "description": "Screenshot policy.",
+          "default": "always",
+          "x-scope": "either"
+        },
+        "attachStrategy": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "native",
+            "assets-branch",
+            "attachment",
+            "none"
+          ],
+          "description": "How screenshots reach the tracker.",
+          "default": "auto",
+          "x-scope": "either"
+        },
+        "securityLabel": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Label marking security findings (the audit gates every High carrying it).",
+          "x-scope": "project"
+        }
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "riskProfile": {
+          "type": "string",
+          "enum": [
+            "default",
+            "security-critical",
+            "data-critical",
+            "consumer-ui"
+          ],
+          "description": "Weights the edge-case lens table.",
+          "default": "default",
+          "x-scope": "project"
+        },
+        "emphasis": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "Lens ids that must be explicitly reported per PR even when nothing is found.",
+          "default": [],
+          "x-scope": "project"
+        },
+        "lensOverlay": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Optional project-specific lens additions.",
+          "default": ".fleet/lenses.md",
+          "x-scope": "project"
+        },
+        "securitySkill": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Name of a project skill applied for the security lens.",
+          "x-scope": "project"
+        },
+        "testingSkill": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Name of a project skill for reasoning about untested behaviour.",
+          "x-scope": "project"
+        }
+      }
+    }
+  }
+}

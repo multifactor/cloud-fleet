@@ -1,0 +1,7 @@
+{
+  "name": "claude-fleet",
+  "version": "0.1.0",
+  "description": "Fan out N isolated Claude Code sessions (one git worktree each) driven by tickets from any issue tracker, with a shared dev-server pool, locks, a supervisor and a Push-PR flow (/fleet); plus an edge-case reviewer that files each still-open PR gap as a gated ticket for the fleet to work (/fleet-check). Company-independent; Windows Terminal or tmux.",
+  "author": { "name": "Multifactor" },
+  "license": "MIT"
+}
