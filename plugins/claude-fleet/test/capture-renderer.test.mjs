@@ -3,8 +3,11 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-import { chromeCandidates, noRendererMessage, loadPlaywright } from '../capture/browser.mjs'
+const __filename = fileURLToPath(import.meta.url)
+
+import { chromeCandidates, noRendererMessage, loadPlaywright, selectEngine } from '../capture/browser.mjs'
 import { chromeArgs as pdfArgs, parseArgs as pdfParseArgs, renderPdf } from '../capture/review-pdf.mjs'
 import { chromeArgs as shotArgs, parseArgs as shotParseArgs, screenshot } from '../capture/screenshot.mjs'
 
@@ -72,4 +75,32 @@ test('a missing input file is refused before any browser is launched', async () 
   )
   await assert.rejects(() => screenshot({ out: '/w/o.png' }), /--url is required/)
   await assert.rejects(() => screenshot({ url: 'http://x/' }), /--out is required/)
+})
+
+
+// ---- the engine: capturing with Safari's engine instead of Chromium ------------------------------
+
+/** A fake Playwright whose engines are "built" only where a path is given. */
+function fakePw(built) {
+  const mk = name => ({ executablePath: () => (built[name] ? built[name] : (() => { throw new Error(`no ${name}`) })()) })
+  return { chromium: mk('chromium'), webkit: mk('webkit') }
+}
+
+test('auto prefers chromium, because only chromium can PRINT a review page', async t => {
+  // webkit refuses page.pdf() outright ("PDF generation is only supported for Headless Chromium"),
+  // so on webkit the PDF becomes an image of the page. Real text is worth preferring for.
+  const both = fakePw({ chromium: __filename, webkit: __filename })
+  assert.equal((await selectEngine(both, 'auto')).name, 'chromium')
+  assert.equal((await selectEngine(both, 'webkit')).name, 'webkit', 'an explicit choice is obeyed')
+  assert.equal((await selectEngine(both, 'chromium')).name, 'chromium')
+})
+
+test('auto falls back to webkit rather than failing — a Mac with one engine should still capture', async () => {
+  const webkitOnly = fakePw({ webkit: __filename })
+  assert.equal((await selectEngine(webkitOnly, 'auto')).name, 'webkit')
+  // ⛔ "installed" is not "built": Playwright is a package, each engine is a separate download, and
+  // an engine whose binary is absent must not be selected — that is the commonest capture failure.
+  assert.equal(await selectEngine(webkitOnly, 'chromium'), null, 'an unbuilt engine is never selected')
+  assert.equal(await selectEngine(fakePw({}), 'auto'), null, 'no engine built at all')
+  assert.equal(await selectEngine(null, 'auto'), null, 'no Playwright at all')
 })

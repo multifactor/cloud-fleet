@@ -151,6 +151,7 @@ export const SCHEMA = [
   k('capture.loginUrlTemplate', 'string', null, 'project', { describe: 'URL that logs a capture browser in. Placeholders: {base} {account}.' }),
   k('capture.accounts', 'string[]', [], 'project', { describe: 'Isolated capture identities (screenshots on a shared stack collide otherwise).' }),
   k('capture.runner', 'string', null, 'project', { describe: 'Command that runs a capture spec against {url}. Unset uses the bundled runner (capture/screenshot.mjs), which needs only a Chromium the repo or the machine already has.' }),
+  k('capture.engine', 'enum', 'auto', 'either', { enum: ['auto', 'chromium', 'webkit'], describe: 'Browser engine captures run in. webkit is Safari\'s engine — the right answer on a Mac that will not install Chromium, at the cost of an image-based review PDF (see capture.reviewPdf).' }),
   k('capture.reviewPdf', 'bool', true, 'project', { describe: 'Render the session\'s scratch review page to a one-page PDF and attach it to the PR on the assets branch.' }),
   k('capture.bootstrapScript', 'path', null, 'project', { describe: 'Project-supplied script that brings the app up inside a cloud sandbox.' }),
   k('capture.requiredEnv', 'string[]', [], 'project', { describe: 'Env var NAMES a cloud worker asserts non-empty before installing (values never printed).' }),

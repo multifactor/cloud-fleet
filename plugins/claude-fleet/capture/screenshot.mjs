@@ -18,7 +18,7 @@ import process from 'node:process'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
-import { loadPlaywright, findChrome, noRendererMessage } from './browser.mjs'
+import { loadPlaywright, findChrome, noRendererMessage, selectEngine } from './browser.mjs'
 
 export function parseArgs(argv) {
   const out = { width: 1280, height: 800, full: true, timeout: 30_000 }
@@ -43,17 +43,19 @@ export function chromeArgs({ url, out, width, height }) {
   ]
 }
 
-export async function screenshot({ url, out, width = 1280, height = 800, full = true, wait = null, repo = null, timeout = 30_000 } = {}) {
+export async function screenshot({ url, out, width = 1280, height = 800, full = true, wait = null, repo = null, timeout = 30_000, engine = 'auto' } = {}) {
   if (!url) throw new Error('screenshot: --url is required')
   if (!out) throw new Error('screenshot: --out is required')
   fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true })
 
   let playwrightFailure = null
   const pw = await loadPlaywright(repo)
-  if (pw) {
+  // webkit is Safari's engine and screenshots perfectly well — the PDF is the only thing it cannot do.
+  const picked = await selectEngine(pw, engine)
+  if (picked) {
     let browser = null
     try {
-      browser = await pw.chromium.launch()
+      browser = await picked.type.launch()
       const page = await browser.newPage({ viewport: { width, height } })
       const res = await page.goto(url, { waitUntil: 'networkidle', timeout })
       // ⛔ Judge by the STATUS CODE. A dev stack is two halves and either can die alone, so a page
@@ -65,7 +67,7 @@ export async function screenshot({ url, out, width = 1280, height = 800, full = 
       }
       if (wait) await page.waitForSelector(wait, { timeout })
       await page.screenshot({ path: out, fullPage: full })
-      return { ok: true, via: 'playwright', out, url, status, width, height }
+      return { ok: true, via: picked.name, out, url, status, width, height }
     } catch (e) {
       playwrightFailure = e && e.message ? e.message.split('\n')[0] : String(e)
       if (/answered \d+/.test(playwrightFailure)) throw e // a real bad status, not a missing browser

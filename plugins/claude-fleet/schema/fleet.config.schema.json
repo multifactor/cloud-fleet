@@ -962,6 +962,17 @@
           "description": "Command that runs a capture spec against {url}. Unset uses the bundled runner (capture/screenshot.mjs), which needs only a Chromium the repo or the machine already has.",
           "x-scope": "project"
         },
+        "engine": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "chromium",
+            "webkit"
+          ],
+          "description": "Browser engine captures run in. webkit is Safari's engine — the right answer on a Mac that will not install Chromium, at the cost of an image-based review PDF (see capture.reviewPdf).",
+          "default": "auto",
+          "x-scope": "either"
+        },
         "reviewPdf": {
           "type": "boolean",
           "description": "Render the session's scratch review page to a one-page PDF and attach it to the PR on the assets branch.",
