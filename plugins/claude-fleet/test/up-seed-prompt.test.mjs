@@ -45,6 +45,33 @@ test('unsent text is recognised through the input line\'s own wrapping', () => {
   assert.equal(stillUnsent('', PROMPT), false)
 })
 
+test('a prompt the agent ECHOED after accepting it is not mistaken for one still unsent', () => {
+  // ⛔ The regression this exists for. An agent that accepts a prompt echoes it into the transcript,
+  // so the text is still on screen after a perfectly successful submit — above the input box, not in
+  // it. Searching the whole capture reported every STARTED session as stuck, pressed Enter into it
+  // three more times, and failed the launch of a fleet that was already working.
+  const accepted = [
+    '  Read your descriptor at /state/sessions/1.json and start on ABC-1234 now.',
+    '',
+    '⏺ I will start by reading my session descriptor and playbook.',
+    '',
+    '  Reading playbook part 1',
+    '  ⎿  $ sed -n \'1,400p\' /state/playbook.md',
+    ...Array.from({ length: 14 }, (_, i) => `  … playbook line ${i}`),
+    '',
+    '✽ Bootstrapping… (24s · ↓ 1.2k tokens)',
+    '────────────────────────────────────────',
+    '❯ ',
+    '────────────────────────────────────────',
+    '  ⏵⏵ bypass permissions on · esc to interrupt',
+  ].join('\n')
+  assert.equal(stillUnsent(accepted, PROMPT), false, 'the echo sits above the input box, so it is not unsent')
+
+  // The genuine article: the same text, but at the bottom, where the cursor is.
+  const sitting = ['⏺ earlier output', '────────', `❯ ${PROMPT}`, '────────', '  ⏵⏵ bypass permissions on'].join('\n')
+  assert.equal(stillUnsent(sitting, PROMPT), true)
+})
+
 test('the prompt waits for a trust dialog to clear, and is only sent once it has', async () => {
   const backend = fakeBackend([
     'Quick safety check: Is this a project you trust?',

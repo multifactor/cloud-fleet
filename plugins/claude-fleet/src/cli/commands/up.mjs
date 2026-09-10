@@ -333,12 +333,19 @@ export function gateShowing(text) {
  * PURE. Is the seed prompt still sitting in the input line rather than submitted?
  *
  * Compared with whitespace collapsed, because a TUI wraps the input line at the pane width and a
- * literal substring test would miss its own text. The TAIL is the needle: the head of the prompt
- * scrolls out of an input box, the end of it does not.
+ * literal substring test would miss its own text. The TAIL of the prompt is the needle: the head of
+ * a long prompt scrolls out of an input box, the end of it does not.
+ *
+ * ⛔ ONLY THE BOTTOM OF THE PANE COUNTS. An agent that accepts a prompt ECHOES IT into the
+ * transcript, so the same text is still on screen after a perfectly successful submit — just above
+ * the input box instead of inside it. Searching the whole capture therefore reported every started
+ * session as stuck, pressed Enter into it several more times, and failed the launch of a fleet that
+ * was already working. An unsent prompt is by definition at the bottom, where the cursor is.
  */
-export function stillUnsent(paneText, prompt) {
+export function stillUnsent(paneText, prompt, { tailLines = 12 } = {}) {
   const flat = s => String(s ?? '').replace(/\s+/g, ' ').trim()
-  const hay = flat(paneText)
+  const tail = String(paneText ?? '').split(/\r?\n/).slice(-tailLines).join('\n')
+  const hay = flat(tail)
   const needle = flat(prompt).slice(-60)
   return needle.length > 0 && hay.includes(needle)
 }
