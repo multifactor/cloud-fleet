@@ -556,6 +556,60 @@ export const BOOTSTRAP_TIMEOUT_MS = 60 * 60_000
 // tool is allowed to spawn a process — which is outside this change.
 const defaultBootstrap = (job, config) => shellCommand(config.commands.bootstrap, { cwd: job.worktree, timeoutMs: BOOTSTRAP_TIMEOUT_MS })
 
+/** PURE. Which of these paths is a lockfile the bootstrap is entitled to rewrite? */
+export function lockfilePaths(porcelain) {
+  return String(porcelain ?? '')
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(Boolean)
+    .map(l => l.replace(/^[A-Z?! ]{1,2}\s+/, '').trim())
+    .filter(f => LOCKFILES.includes(f.split('/').pop()))
+}
+
+/** The lockfiles git currently reports as modified in this worktree. */
+export function lockfileDirt(worktree, { run = shellCommand } = {}) {
+  // ⛔ Never throws. A worktree that has gone missing, a shell that will not spawn, a git that is
+  // not there — none of those is a reason to fail an install that otherwise succeeded. The answer
+  // is "cannot tell", and the caller restores nothing.
+  try {
+    const r = run('git status --porcelain -- ' + LOCKFILES.map(f => `"${f}"`).join(' '), { cwd: worktree, timeoutMs: 30_000 })
+    return r && r.ok ? lockfilePaths(r.stdout) : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Undo the lockfile churn a bootstrap leaves behind.
+ *
+ * ⛔ THIS IS WHAT KEPT FINISHED SESSIONS OPEN FOR EVER. `npm install` rewrites `package-lock.json`
+ * on a perfectly clean checkout — metadata, ordering, a resolved URL — so EVERY worktree ends its
+ * bootstrap dirty. The reclaimer then refuses every one of them ("a session that flagged pr-pushed
+ * with uncommitted work is not done"), which is right as a rule and catastrophic here: the session
+ * pushed its PR, said it was done, and its window and worktree stayed for ever while `fleet status`
+ * reported a healthy idle session. On a repo whose bootstrap touches the lockfile, that is a fleet
+ * unable to close a single session it ever opened.
+ *
+ * ⛔ Only a LOCKFILE, and only one the BOOTSTRAP dirtied — `dirtyBefore` is subtracted, so a
+ * lockfile that was already modified when the install started is left exactly as it was. A session's
+ * own dependency change happens later, while it works, and never passes through here.
+ */
+export function restoreLockfileChurn(worktree, dirtyBefore, { run = shellCommand } = {}) {
+  const after = lockfileDirt(worktree, { run })
+  if (after === null) return { restored: [], reason: 'git status could not be read; nothing was restored' }
+  const churn = after.filter(f => !(dirtyBefore || []).includes(f))
+  if (!churn.length) return { restored: [], reason: null }
+  try {
+    const r = run('git checkout -- ' + churn.map(f => `"${f}"`).join(' '), { cwd: worktree, timeoutMs: 60_000 })
+    return r && r.ok
+      ? { restored: churn, reason: null }
+      : { restored: [], reason: `git checkout failed: ${(r && r.stderr ? r.stderr : '').trim() || `exit ${r && r.code}`}` }
+  } catch (e) {
+    return { restored: [], reason: `git checkout threw: ${e && e.message ? e.message : String(e)}` }
+  }
+}
+
+
 /**
  * Install one worktree and prove it.
  *
@@ -565,7 +619,7 @@ const defaultBootstrap = (job, config) => shellCommand(config.commands.bootstrap
  * the whole tree back and leaves wreckage identical to two writers in one tree, and only one of
  * those two is fixable by retrying.
  */
-export async function installOne(job, { config, reference = null, run = defaultBootstrap, now = Date.now } = {}) {
+export async function installOne(job, { config, reference = null, run = defaultBootstrap, git = shellCommand, now = Date.now } = {}) {
   // ⛔ The sentinel goes FIRST, before the installer touches anything. A worktree being reinstalled
   // must stop claiming to be ready immediately: if this install fails, the previous run's green
   // sentinel would otherwise survive on top of a half-extracted tree and readyState() would report
@@ -573,9 +627,15 @@ export async function installOne(job, { config, reference = null, run = defaultB
   // guard cannot see, because an interrupted install does not change the lockfile. Nothing writes a
   // sentinel between here and the proof, so the failure path below needs no second clear.
   clearReadySentinel(job.worktree, config)
+  // What the tree already had before the installer touched it — subtracted below, so only the
+  // bootstrap's own churn is undone and a pre-existing edit is left alone.
+  const dirtyBefore = lockfileDirt(job.worktree, { run: git }) || []
   const r = await run(job, config)
+  // ⛔ Before the proof, and before anything reports ready: a worktree left dirty by its own install
+  // is a worktree the reclaimer will refuse for ever (see restoreLockfileChurn).
+  const lockfiles = restoreLockfileChurn(job.worktree, dirtyBefore, { run: git })
   const proof = verifyInstall(job.worktree, reference, config)
-  const base = { label: job.label, worktree: job.worktree, exitOk: !!r.ok, code: r.code === undefined ? null : r.code, proof }
+  const base = { label: job.label, worktree: job.worktree, exitOk: !!r.ok, code: r.code === undefined ? null : r.code, proof, lockfiles }
   if (!proof.ok) return { ...base, ok: false, sentinel: null, reason: proof.reason }
   return { ...base, ok: true, sentinel: writeReadySentinel(job.worktree, config, { proof, now }), reason: proof.reason }
 }

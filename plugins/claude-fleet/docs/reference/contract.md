@@ -387,7 +387,7 @@ rest?: {baseUrlKey: tracker.rest.baseUrl, tokenEnv: tracker.rest.tokenEnv}
 ## 7. CLI
 
 ```
-fleet up [n] [--testing k] [--issues A,B] [--add k] [--role working|checker] [--sweep-id s] [--dry-run] [--no-wizard]
+fleet up [n] [--testing k] [--issues A,B] [--add k] [--role working|checker] [--sweep-id s] [--dry-run] [--no-wizard] [--no-watch]
     --sweep-id  required by `--role checker`: `vcs.checkerBranchTemplate` renders `{sweepId}`, and a
                 branch with an unrendered token is not a branch name. It is the id `fleet check plan`
                 printed, and it must be a plain directory name (it also names <stateDir>/sweeps/<id>/).

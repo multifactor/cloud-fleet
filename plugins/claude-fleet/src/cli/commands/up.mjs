@@ -41,9 +41,11 @@ import { writeTextAtomic } from '../../watchers/guardian.mjs'
 import { WATCH_ENTRY_FILES } from '../../supervisor/loop.mjs'
 import { findByCommand, sessionLabelOf, tokenize } from '../../sys/proc.mjs'
 import { snapshot as takeSnapshot } from '../../sys/snapshot.mjs'
+import { spawn as spawnProcess } from 'node:child_process'
+import { WATCH_PATTERN, isWatchArgv } from '../../supervisor/loop.mjs'
 
 export const name = 'up'
-export const usage = 'fleet up [n] [--testing k] [--issues A,B] [--add k] [--role working|checker] [--sweep-id s] [--dry-run] [--no-wizard]'
+export const usage = 'fleet up [n] [--testing k] [--issues A,B] [--add k] [--role working|checker] [--sweep-id s] [--dry-run] [--no-wizard] [--no-watch]'
 export const needsConfig = true
 // A command that opens windows has no answer without a terminal, so selection failing here IS the
 // right answer — including under --dry-run, whose plan would otherwise promise windows this machine
@@ -52,6 +54,9 @@ export const needsBackend = true
 
 /** The shim every session window runs: `node shim.mjs --fleet-session=<label> <descriptor.json>`. */
 export const SHIM = fileURLToPath(new URL('../../session/shim.mjs', import.meta.url))
+
+/** The CLI entry the supervisor is spawned from — the same file this command is served by. */
+export const CLI_ENTRY = fileURLToPath(new URL('../../cli.mjs', import.meta.url))
 
 /** The statuses that make a launch impossible, as opposed to the two the wizard is still walking. */
 const BLOCKING_STATUS = Object.freeze(['needs-init', 'needs-machine', 'invalid', 'unmigrated'])
@@ -742,7 +747,43 @@ export async function runUp(ctx, args, { verb = 'up' } = {}) {
     }))
   printTable(rows, ctx.log)
   if (installs) ctx.log(`fleet ${verb}: ${installs.queued} install(s) in ${installs.waves} wave(s); ${installs.failed.length} failed`)
+  if (!args.flags['no-watch']) {
+    const sup = startSupervisor(ctx)
+    if (sup.started) ctx.log(`fleet ${verb}: supervisor started (pid ${sup.pid}) — it reclaims a session as soon as it flags done`)
+    else if (sup.pid) ctx.log(`fleet ${verb}: supervisor already running (pid ${sup.pid})`)
+    else ctx.log(`fleet ${verb}: no supervisor could be started (${sup.reason}) — finished sessions will stay open until you run \`fleet watch\``)
+  }
   return ok ? 0 : 1
+}
+
+/**
+ * Start the supervisor, unless one is already running.
+ *
+ * ⛔ THE SUPERVISOR IS WHAT CLOSES A FINISHED SESSION. It reclaims a `done` flag — kills the window,
+ * verifies zero survivors, removes the worktree — and it also reaps stale locks, restarts a dead
+ * testing server and tree-kills rogue dev servers. The playbook told the OPERATOR to start it
+ * ("right after `fleet up`"), which means every launch that forgets leaves finished sessions sitting
+ * open for ever, each one reading on `fleet status` as a healthy idle session. Forgetting a
+ * documented manual step is not an operator failure; it is a launcher that should have done it.
+ *
+ * Detached and stdio-ignored on purpose: it must outlive this process, which exits as soon as the
+ * fleet is up. A supervisor that is already running is left alone — loop.instanceDecision resolves
+ * duplicates by age anyway, but not spawning one is cheaper than racing it.
+ */
+export function startSupervisor(ctx, { spawn = spawnProcess, snapshot = null, node = process.execPath, entry = CLI_ENTRY } = {}) {
+  const snap = snapshot || safeSnapshot()
+  const running = snap && snap.size
+    ? findByCommand(snap, WATCH_PATTERN, { selfPid: process.pid }).filter(p => isWatchArgv(p.cmd))
+    : []
+  if (running.length) return { started: false, pid: running[0].pid, reason: 'a supervisor is already running' }
+  try {
+    const child = spawn(node, [entry, 'watch'], { cwd: ctx.cwd, detached: true, stdio: 'ignore' })
+    child.unref()
+    return { started: true, pid: child.pid, reason: null }
+  } catch (e) {
+    // Never fatal: a fleet with no supervisor still works, it just does not tidy up after itself.
+    return { started: false, pid: null, reason: e && e.message ? e.message : String(e) }
+  }
 }
 
 /**
