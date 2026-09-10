@@ -124,6 +124,22 @@ export function repairPlan(verdict, worktree = '') {
 // ---- pure: is this worktree ready? ----------------------------------------------------------------
 
 /**
+ * PURE. A lockfile hash as a human can act on it: the NAME whole, the digest short.
+ *
+ * ⛔ A hash is `<name>:<32 hex>`, so the old `slice(0, 16)` cut INSIDE THE NAME and both sides of a
+ * real mismatch printed "package-lock.jso". The sentence then named two identical values and called
+ * them different, which sends an operator looking for a bug in the tool instead of at the branch
+ * their worktree was cut from. It lived at TWO call sites and was fixed at one; this exists so there
+ * is only ever one.
+ */
+export function describeLockfileHash(h) {
+  if (!h) return 'no lockfile'
+  const str = String(h)
+  const cut = str.indexOf(':')
+  return cut === -1 ? str : `${str.slice(0, cut)}@${str.slice(cut + 1, cut + 13)}`
+}
+
+/**
  * Judge an OBSERVED worktree — `{path, sentinel, lockfileHash}` from observeWorktree(). PURE.
  *
  * ⛔ The sentinel is judged against the lockfile it was written for. Worktrees are reused rather
@@ -148,7 +164,7 @@ export function readyState(worktree, config) {
     return {
       ready: false,
       state: 'stale-lockfile',
-      reason: `the ready sentinel was written for ${s.lockfileHash ? `lockfile ${String(s.lockfileHash).slice(0, 16)}` : 'a repo with no lockfile'}, the worktree is at ${String(worktree.lockfileHash).slice(0, 16)}`,
+      reason: `the ready sentinel was written for ${describeLockfileHash(s.lockfileHash)}, the worktree is at ${describeLockfileHash(worktree.lockfileHash)}`,
     }
   }
   return {
@@ -419,17 +435,7 @@ export function verifyInstall(worktree, reference, config) {
   // repair plan naming directories that are not supposed to exist, forever.
   const worktreeHash = lockfileHashOf(worktree)
   if (reference.lockfileHash !== worktreeHash) {
-    // ⛔ A lockfile hash is `<name>:<32 hex>` (lockfileHashOf), and the old `slice(0, 16)` cut
-    // INSIDE THE NAME: both sides of a real mismatch printed "package-lock.jso", so the sentence
-    // named two identical values and called them different. An operator reading that looks for a
-    // bug in the tool, not for the branch their worktree was cut from. Keep the name whole and
-    // shorten only the digest, which is the half that actually differs.
-    const at = h => {
-      if (!h) return 'no lockfile'
-      const s = String(h)
-      const cut = s.indexOf(':')
-      return cut === -1 ? s : `${s.slice(0, cut)}@${s.slice(cut + 1, cut + 13)}`
-    }
+    const at = describeLockfileHash
     // ⛔ A DIFFERENT LOCKFILE IS THE NORMAL CASE, NOT AN ERROR. Worktrees are cut from the BASE
     // branch while the primary checkout sits on whatever the operator was last working on — so the
     // moment they are on a branch that touched the lockfile, every session's reference disagrees.

@@ -320,6 +320,35 @@ export function writeResolved(ctx) {
 //
 // So: wait for the modal to clear, send, then PROVE the text left the input line.
 
+/**
+ * The agent has finished booting and is showing its input line.
+ *
+ * ⛔ WITHOUT THIS, AN EMPTY PANE READS AS SUCCESS. `spawn` returns when tmux has a window, but the
+ * agent CLI needs ten to thirty seconds to paint anything. The seed prompt was pasted into that gap,
+ * the Enter that `send` appends was swallowed by a CLI not yet reading keys, and the delivery check —
+ * polling for four seconds — looked at a blank pane, found none of its own text sitting in an input
+ * line, and concluded the prompt had been submitted. The session then sat idle for ever with the
+ * whole instruction in its input box, which is the exact failure the check exists to catch.
+ *
+ * So: wait for the input line to EXIST before typing into it. These markers are the agent's own
+ * status line — the mode indicator and the interrupt hint every turn paints.
+ */
+export const READY_PATTERNS = Object.freeze([
+  // The input line itself — the one marker that does not depend on which agent, which version, or
+  // which mode is on. A readiness test built only from status-line wording hangs for the full gate
+  // on any agent whose wording is not in the list, which is worse than the race it replaces.
+  /^\s*[❯>]/m,
+  /bypass permissions on|auto mode on|accept edits on|plan mode on/i,
+  /esc to interrupt/i,
+  /shift\+tab to cycle/i,
+])
+
+/** PURE. Is the agent showing its input line yet? */
+export function agentReady(text) {
+  const s = String(text ?? '')
+  return READY_PATTERNS.some(re => re.test(s))
+}
+
 /** Dialogs an unattended session cannot answer by itself, and the words each is recognised by. */
 export const GATE_PATTERNS = Object.freeze([
   { name: 'a workspace-trust dialog', re: /trust this folder|Is this a project you (created or )?trust/i },
@@ -366,16 +395,31 @@ export async function deliverSeedPrompt(backend, handle, prompt, {
   sleep: nap = sleep,
   gateMs = 300_000,
   pollMs = 1000,
-  attempts = 3,
+  attempts = 8,
   now = () => Date.now(),
 } = {}) {
   const canRead = typeof backend.readText === 'function'
   if (canRead) {
     const deadline = now() + gateMs
     let announced = null
+    let waitedForBoot = false
     for (;;) {
-      const gate = gateShowing(backend.readText(handle))
-      if (!gate) break
+      const text = backend.readText(handle)
+      const gate = gateShowing(text)
+      if (!gate) {
+        // ⛔ No gate is not the same as ready. A pane that has painted nothing yet has no dialog in
+        // it either, and typing into that is how the prompt ends up in an input line nobody submits.
+        if (agentReady(text)) break
+        if (now() >= deadline) {
+          return { ok: false, requested: prompt.length, delivered: 0, truncated: false, gate: null, reason: `the agent never showed an input line within ${Math.round(gateMs / 1000)}s, so the seed prompt was never sent` }
+        }
+        if (!waitedForBoot) {
+          waitedForBoot = true
+          log(`${label}: waiting for the agent to finish starting before sending its assignment`)
+        }
+        await nap(pollMs)
+        continue
+      }
       if (gate !== announced) {
         announced = gate
         log(`${label}: waiting on ${gate} in its window — answer it there and the session starts on its own`)
@@ -391,7 +435,10 @@ export async function deliverSeedPrompt(backend, handle, prompt, {
   if (!sent.ok || !canRead || typeof backend.submit !== 'function') return sent
 
   for (let i = 0; i <= attempts; i++) {
-    await nap(pollMs)
+    // ⛔ Two seconds, eight times. The first check used to run one second after the paste and give up
+    // after four — inside the window where the agent is still rendering, which is precisely when a
+    // swallowed Enter looks like a delivered prompt.
+    await nap(pollMs * 2)
     const text = backend.readText(handle)
     // A pane that cannot be read proves nothing either way; treat the send as it reported itself.
     if (text === null || !stillUnsent(text, prompt)) return sent
