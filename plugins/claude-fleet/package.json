@@ -12,6 +12,7 @@
   },
   "files": [
     "bin",
+    "capture",
     "src",
     "playbooks",
     "trackers",

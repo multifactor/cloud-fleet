@@ -966,6 +966,20 @@ live approval**.
 
 The PR body **must** contain:
 
+- **Review page** — when `capture.reviewPdf` is true (the default), render your review page to a
+  **one-page PDF** and attach it, exactly like the screenshots:
+
+  ```
+  node "$FLEET_PLUGIN_ROOT/capture/review-pdf.mjs" --html <paths.artifactsDir>/<KEY>.html \
+       --out <paths.artifactsDir>/<KEY>.pdf --repo <primary checkout>
+  fleet assets add <paths.artifactsDir>/<KEY>.pdf --branch assets-<KEY>
+  ```
+
+  Link it **pinned to the commit SHA** the `assets add` output prints, never the branch name. The
+  HTML page itself still never enters any diff — the PDF goes on the assets branch, like every other
+  attachment. ⛔ If the render fails, say so in one line in the PR body and carry on: a missing PDF
+  is never a reason to withhold the PR, and a *silent* missing PDF is how nobody notices the whole
+  fleet stopped attaching them.
 - **What / why** — the plain-English problem and fix (reuse the review page's first section).
 - **Prescription** — one of `followed` / `amended (see ticket comment 2026-03-14)` / `n/a`; for
   `amended`, the one-line why.

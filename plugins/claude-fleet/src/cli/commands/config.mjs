@@ -194,6 +194,31 @@ async function detect(ctx) {
   proposal.push(row('services.containers', containers, facts.compose ? `compose file ${facts.compose.file}` : 'no compose file found'))
   proposal.push(row('emulator.slots', ctx.config.emulator.slots, 'not probed — a second AVD costs RAM the box usually has not got; enable the pool by hand'))
 
+  // ⛔ CAPTURE MUST APPEAR IN THE TABLE. It never used to, so `capture.mode` sat at its `local`
+  // default with `capture.runner` null and no renderer checked — and the operator was never asked a
+  // single question about screenshots. The result is a fleet that believes it captures, review pages
+  // that read "No screenshots.", and PRs with no evidence, with nothing anywhere reporting a fault.
+  // Proposing the rows is what turns a silent default into a decision.
+  const primaryDir = facts.git.primary || ctx.cwd
+  const hasPlaywright = !!primaryDir && fs.existsSync(path.join(primaryDir, 'node_modules', 'playwright'))
+  proposal.push(row(
+    'capture.mode',
+    ctx.config.capture.mode,
+    hasPlaywright
+      ? 'default — this repo has Playwright, so the bundled runner can screenshot a testing slot'
+      : 'default — no Playwright found here; `local` still works through a system Chrome, and `none` is the honest setting for a repo with no UI',
+  ))
+  proposal.push(row(
+    'capture.runner',
+    ctx.config.capture.runner,
+    'unset uses the bundled runner (capture/screenshot.mjs: one URL in, one PNG out) — point this at your own command only when a capture needs to sign in, seed data or drive a flow',
+  ))
+  proposal.push(row(
+    'capture.reviewPdf',
+    ctx.config.capture.reviewPdf,
+    'default — the scratch review page is rendered to a one-page PDF and attached to the PR on the assets branch',
+  ))
+
   const m = facts.machine || {}
   const sizeSource = m.totalRamGb && m.cpus
     ? `this machine: floor((${Math.round(m.totalRamGb)} - ${ctx.config.install.reservePhysicalGb}) / ${ctx.config.install.perInstallGb}) = ${fleetSizeFor(m, ctx.config.install)}, capped at ${m.cpus} cpus`
