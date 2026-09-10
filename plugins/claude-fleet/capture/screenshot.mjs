@@ -13,12 +13,38 @@
 //                            [--wait <selector>] [--full true] [--repo <dir>] [--timeout 30000]
 
 import fs from 'node:fs'
+import { createHash } from 'node:crypto'
 import path from 'node:path'
 import process from 'node:process'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
-import { loadPlaywright, findChrome, noRendererMessage } from './browser.mjs'
+import { loadPlaywright, findChrome, noRendererMessage, selectEngine } from './browser.mjs'
+
+/** PURE. sha1 of a file, or null when it is not there. */
+export function fileHash(file) {
+  try {
+    return createHash('sha1').update(fs.readFileSync(file)).digest('hex')
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Are these two captures the same image?
+ *
+ * ⛔ A BYTE-IDENTICAL PAIR IS A FAILED CAPTURE UNTIL PROVEN OTHERWISE, and it is the single easiest
+ * way to file evidence that proves nothing. It has two causes and they look identical: the harness
+ * served a STALE BUILD (this repo's own e2e setup rebuilds only when there is no build output, so an
+ * "after" run silently re-photographs the "before" bundle), or the change genuinely moves no pixels.
+ * Only the second is a real result, and only the session knows which — so the answer is reported, not
+ * guessed, and a session that means the second says so out loud.
+ */
+export function identicalPair(beforeFile, afterFile) {
+  const a = fileHash(beforeFile)
+  const b = fileHash(afterFile)
+  return !!a && a === b
+}
 
 export function parseArgs(argv) {
   const out = { width: 1280, height: 800, full: true, timeout: 30_000 }
@@ -43,17 +69,19 @@ export function chromeArgs({ url, out, width, height }) {
   ]
 }
 
-export async function screenshot({ url, out, width = 1280, height = 800, full = true, wait = null, repo = null, timeout = 30_000 } = {}) {
+export async function screenshot({ url, out, width = 1280, height = 800, full = true, wait = null, repo = null, timeout = 30_000, engine = 'auto' } = {}) {
   if (!url) throw new Error('screenshot: --url is required')
   if (!out) throw new Error('screenshot: --out is required')
   fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true })
 
   let playwrightFailure = null
   const pw = await loadPlaywright(repo)
-  if (pw) {
+  // webkit is Safari's engine and screenshots perfectly well — the PDF is the only thing it cannot do.
+  const picked = await selectEngine(pw, engine)
+  if (picked) {
     let browser = null
     try {
-      browser = await pw.chromium.launch()
+      browser = await picked.type.launch()
       const page = await browser.newPage({ viewport: { width, height } })
       const res = await page.goto(url, { waitUntil: 'networkidle', timeout })
       // ⛔ Judge by the STATUS CODE. A dev stack is two halves and either can die alone, so a page
@@ -65,7 +93,7 @@ export async function screenshot({ url, out, width = 1280, height = 800, full = 
       }
       if (wait) await page.waitForSelector(wait, { timeout })
       await page.screenshot({ path: out, fullPage: full })
-      return { ok: true, via: 'playwright', out, url, status, width, height }
+      return { ok: true, via: picked.name, out, url, status, width, height }
     } catch (e) {
       playwrightFailure = e && e.message ? e.message.split('\n')[0] : String(e)
       if (/answered \d+/.test(playwrightFailure)) throw e // a real bad status, not a missing browser

@@ -966,6 +966,17 @@ live approval**.
 
 The PR body **must** contain:
 
+- ⛔ **A byte-identical before/after pair is a FAILED capture, not a finding.** Hash both PNGs. If
+  they match, the usual cause is a **stale build** — a harness that rebuilds only when no build
+  output exists will silently re-photograph the *before* bundle for your *after* shot, and the pair
+  then "proves" your fix does nothing. Force a rebuild and shoot again before you conclude anything.
+  Only when a rebuild still yields the same bytes is the change genuinely non-visual — and then the
+  evidence is the **accessibility tree**, or the state the fix actually changes, not the image. Say
+  which of the two it is; never file an identical pair silently.
+- ⛔ **Judge a capture by the FILE IT PRODUCED, never by an exit code.** A runner that shells out to a
+  test framework can exit 0 having collected no tests at all (a project's own config commonly pins
+  `testMatch` to one file, so a new spec is invisible to it). Check the image exists and is newer
+  than the run.
 - **Review page** — when `capture.reviewPdf` is true (the default), render your review page to a
   **one-page PDF** and attach it, exactly like the screenshots:
 

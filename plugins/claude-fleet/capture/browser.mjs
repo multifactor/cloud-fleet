@@ -63,6 +63,39 @@ export async function loadPlaywright(repoRoot) {
   }
 }
 
+/**
+ * Pick the engine to drive: `chromium`, `webkit` (Safari's engine), or null when neither is built.
+ *
+ * ⛔ WEBKIT IS THE SAFARI ANSWER, AND IT IS HALF AN ANSWER. Safari itself cannot be driven headlessly
+ * — `safaridriver` opens a real window, takes focus, and serves ONE session at a time, which a fleet
+ * of parallel sessions cannot use. Playwright's `webkit` IS the same engine, headless and
+ * parallel-safe, so it is what "capture with Safari" means here.
+ *
+ * ⛔ It cannot print. `page.pdf()` refuses on anything but headless Chromium ("PDF generation is only
+ * supported for Headless Chromium"), so the review PDF on a webkit machine is a full-page screenshot
+ * wrapped by `sips`, not a printed document: correct, one page, and NOT selectable text. That cost is
+ * stated rather than hidden, because a reviewer who tries to copy a line out of it needs to know why.
+ *
+ * `auto` prefers chromium — real vector text, a third the file size — and falls back to webkit rather
+ * than failing, because a Mac with one engine installed should capture rather than argue.
+ */
+export async function selectEngine(pw, engine = 'auto') {
+  if (!pw) return null
+  const built = name => {
+    try {
+      const exe = pw[name] && pw[name].executablePath()
+      return !!exe && fs.existsSync(exe)
+    } catch {
+      return false
+    }
+  }
+  const order = engine === 'auto' ? ['chromium', 'webkit'] : [engine]
+  for (const name of order) {
+    if (pw[name] && built(name)) return { name, type: pw[name] }
+  }
+  return null
+}
+
 /** The first Chrome-family binary that exists, or null. */
 export function findChrome(platform = process.platform, env = process.env) {
   return chromeCandidates(platform, env).find(p => fs.existsSync(p)) || null
