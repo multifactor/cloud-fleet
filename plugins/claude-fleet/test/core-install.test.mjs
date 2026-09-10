@@ -298,7 +298,7 @@ test("a failed re-install takes the previous run's sentinel down with it", async
   assert.equal(readyState(observeWorktree(worktree, c), c).state, 'no-sentinel')
 })
 
-test('a worktree whose lockfile is not the reference\'s is refused with a refresh instruction, not a phantom repair', () => {
+test('a worktree whose lockfile is not the reference\'s falls back to existence, not a phantom repair', () => {
   const root = tmp()
   const c = cfg(path.join(root, 'state'))
   const primary = makeTree(path.join(root, 'app'), { 'node_modules/react': 20, 'node_modules/dropped-dep': 6 })
@@ -308,9 +308,25 @@ test('a worktree whose lockfile is not the reference\'s is refused with a refres
   const worktree = makeTree(path.join(root, 'app-session-1'), { 'node_modules/react': 20 }, { lockfile: '{"lockfileVersion":3,"dropped":true}' })
   const v = verifyInstall(worktree, reference, c)
 
-  assert.equal(v.ok, false)
-  assert.match(v.reason, /refresh the reference/)
+  // ⛔ A different lockfile is the NORMAL case: worktrees are cut from the base branch while the
+  // primary sits on whatever the operator last worked on. Refusing here failed the INSTALL, wrote no
+  // sentinel, and blocked every session in the fleet next to a healthy node_modules. The reference
+  // cannot judge this tree, so it says so and proves what it still can.
+  assert.equal(v.ok, true)
+  assert.equal(v.degradedFrom, 'compare-primary')
+  assert.match(v.reason, /cannot judge it; fell back to an existence proof/)
+  assert.match(v.reason, /Refresh the reference/)
+  // ⛔ The names must survive whole. Slicing the hash to 16 chars cut inside "package-lock.json",
+  // so both sides printed "package-lock.jso" and the sentence named two identical values.
+  assert.match(v.reason, /package-lock\.json@/)
+  assert.doesNotMatch(v.reason, /package-lock\.jso\b/)
   assert.equal(v.verdict, null, 'no verdict, so nothing to build a repair plan out of')
+
+  // An empty tree still fails: falling back to existence must not certify a worktree with nothing in it.
+  const bare = makeTree(path.join(root, 'app-session-2'), {}, { lockfile: '{"lockfileVersion":3,"dropped":true}' })
+  const bad = verifyInstall(bare, reference, c)
+  assert.equal(bad.ok, false)
+  assert.match(bad.reason, /refresh the reference/)
 
   // what comparing across lockfiles produced instead: a plan to delete and reinstall a directory
   // that is not supposed to exist — and never will, so the loop never ends

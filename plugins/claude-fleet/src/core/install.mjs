@@ -419,7 +419,36 @@ export function verifyInstall(worktree, reference, config) {
   // repair plan naming directories that are not supposed to exist, forever.
   const worktreeHash = lockfileHashOf(worktree)
   if (reference.lockfileHash !== worktreeHash) {
-    const at = h => (h ? String(h).slice(0, 16) : 'no lockfile')
+    // ⛔ A lockfile hash is `<name>:<32 hex>` (lockfileHashOf), and the old `slice(0, 16)` cut
+    // INSIDE THE NAME: both sides of a real mismatch printed "package-lock.jso", so the sentence
+    // named two identical values and called them different. An operator reading that looks for a
+    // bug in the tool, not for the branch their worktree was cut from. Keep the name whole and
+    // shorten only the digest, which is the half that actually differs.
+    const at = h => {
+      if (!h) return 'no lockfile'
+      const s = String(h)
+      const cut = s.indexOf(':')
+      return cut === -1 ? s : `${s.slice(0, cut)}@${s.slice(cut + 1, cut + 13)}`
+    }
+    // ⛔ A DIFFERENT LOCKFILE IS THE NORMAL CASE, NOT AN ERROR. Worktrees are cut from the BASE
+    // branch while the primary checkout sits on whatever the operator was last working on — so the
+    // moment they are on a branch that touched the lockfile, every session's reference disagrees.
+    // Failing the proof there fails the INSTALL, no sentinel is written, and every session in the
+    // fleet blocks on "dependencies not ready" with a healthy node_modules sitting beside it. The
+    // reference genuinely cannot judge this tree, so say so and fall back to what can still be
+    // proven — existence — rather than refusing to answer at all. Loud, never silent: the reason
+    // records both hashes and what was given up.
+    const counts = scanTree(worktree)
+    if (counts.size > 0) {
+      return {
+        ok: true,
+        mode,
+        degradedFrom: mode,
+        reason: `the reference was captured for ${at(reference.lockfileHash)} and this worktree is at ${at(worktreeHash)}, so the reference cannot judge it; fell back to an existence proof — ${counts.size} packages present (this proves an install ran, not that the tree is complete). Refresh the reference against this worktree's lockfile for a full comparison.`,
+        verdict: null,
+        probeFiles,
+      }
+    }
     return {
       ok: false,
       mode,

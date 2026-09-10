@@ -1028,6 +1028,16 @@
           "default": "claude",
           "x-scope": "either"
         },
+        "permissionMode": {
+          "type": "string",
+          "enum": [
+            "bypass",
+            "inherit"
+          ],
+          "description": "bypass = spawn sessions in the agent's bypass-permissions mode (the default: nobody is in the window to answer a permission prompt); inherit = leave the host default, and accept that a session can stop on one.",
+          "default": "bypass",
+          "x-scope": "either"
+        },
         "model": {
           "type": [
             "string",
@@ -1222,6 +1232,18 @@
               ],
               "description": "tmux socket name (-L), so the fleet never shares the user's server.",
               "default": "fleet",
+              "x-scope": "user"
+            },
+            "viewer": {
+              "type": "string",
+              "enum": [
+                "auto",
+                "terminal-app",
+                "iterm2",
+                "none"
+              ],
+              "description": "GUI terminal opened per session so the fleet is VISIBLE (tmux creates windows detached). auto = Terminal.app or iTerm2 on a macOS desktop, none under CI/SSH and on other platforms.",
+              "default": "auto",
               "x-scope": "user"
             }
           }
