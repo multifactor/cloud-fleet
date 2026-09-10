@@ -21,6 +21,7 @@ import { selectBackend } from '../../backends/index.mjs'
 import { loadAdapter, validateAdapter } from '../../trackers/registry.mjs'
 import { observe, verdict as servicesVerdict, apply as applyRepairs } from '../../supervisor/checks/services.mjs'
 import { snapshotReference } from '../../core/install.mjs'
+import { probeRenderer } from '../../../capture/browser.mjs'
 import { insideAny } from '../../config/paths.mjs'
 import { envelope } from '../../cli.mjs'
 
@@ -31,6 +32,17 @@ export const needsBackend = false
 
 /** One probe result (contract §7 `fleet doctor`). `hint` is null when there is nothing to do. */
 const probe = (probeName, ok, detail, hint = null) => ({ name: probeName, ok: !!ok, detail, hint: ok ? null : hint })
+
+/**
+ * A probe that REPORTS a fault without blocking a launch.
+ *
+ * ⛔ The distinction is load-bearing in both directions. The playbook does not launch on a red probe,
+ * so making "no browser installed" red would stop a fleet from fixing tickets over a screenshot it
+ * may not even need. But leaving it green is how capture came to fail silently for every user at
+ * once. A warning is the only honest answer: `ok: false` so it is impossible to miss, `warn: true` so
+ * it costs nobody a launch.
+ */
+const warn = (probeName, detail, hint = null) => ({ ...probe(probeName, false, detail, hint), warn: true })
 
 /**
  * PURE. Does this Node satisfy the repo's `engines.node`?
@@ -143,6 +155,31 @@ export async function run(ctx, args) {
     'a review page must outlive the session that made it, and teardown removes worktrees whole — move paths.artifactsDir outside every worktree',
   ))
 
+  // ---- capture -----------------------------------------------------------------------------------
+  // ⛔ THE SILENT FAILURE THIS PROBE EXISTS FOR. `capture.mode` defaults to `local`, so a fleet
+  // believes it captures — while nothing ships to fill `capture.runner` and no renderer is
+  // guaranteed. Every session then writes a review page reading "No screenshots.", the PR carries no
+  // evidence, and NOTHING anywhere reports an error: the fleet looks like it is capturing and is not.
+  // A stock Mac makes it worse, because Safari cannot print headlessly and there is no Chrome.
+  if (config.capture.mode !== 'none') {
+    const renderer = await probeRenderer({ repo: facts.git.primary || ctx.cwd })
+    const runner = config.capture.runner ? `capture.runner = ${config.capture.runner}` : 'no capture.runner: the bundled runner will be used'
+    probes.push(renderer.ok
+      ? probe('capture', true, `capture.mode = ${config.capture.mode}; ${runner}; ${renderer.detail}`)
+      : warn(
+        'capture',
+        `capture.mode = ${config.capture.mode}; ${runner}; ${renderer.detail}`,
+        'without a renderer every review page reads "No screenshots." and the PR carries no evidence, with no error anywhere to say so — install one, or set capture.mode none to opt out deliberately',
+      ))
+    if (config.capture.mode === 'local' && config.testing.count === 0) {
+      probes.push(warn(
+        'capture-slot',
+        'capture.mode is local but testing.count is 0, so there is no dev server to capture against',
+        'raise testing.count, or set capture.mode to cloud or none — a local capture with no slot silently takes no screenshots',
+      ))
+    }
+  }
+
   // ---- services ----------------------------------------------------------------------------------
   const observed = await observe(config)
   const services = servicesVerdict({ config, observed })
@@ -177,8 +214,8 @@ export async function run(ctx, args) {
     ))
   }
 
-  const ok = probes.every(p => p.ok)
-  const failed = probes.filter(p => !p.ok)
+  const ok = probes.every(p => p.ok || p.warn)
+  const failed = probes.filter(p => !p.ok && !p.warn)
   ctx.json(ok
     ? envelope(true, payload)
     : envelope(false, {

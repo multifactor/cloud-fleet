@@ -571,7 +571,12 @@ test('doctor reports every probe, and ECHOES the derived rogue-server pattern fo
   const f = makeRepo(t, { config: OK_CONFIG })
   const r = await cli(['doctor', '--json'], f)
   const by = Object.fromEntries(r.payload.probes.map(p => [p.name, p]))
-  assert.deepEqual(Object.keys(by).sort(), ['artifacts-dir', 'dev-server-pattern', 'git', 'node', 'repo', 'services', 'state-dir', 'terminal-backend', 'tracker-adapter'].sort())
+  // `capture` is here because a fleet whose capture is unconfigured used to say NOTHING: capture.mode
+  // defaults to local, capture.runner to null, and every review page came out reading
+  // "No screenshots." with no error anywhere to explain it.
+  assert.deepEqual(Object.keys(by).sort(), ['artifacts-dir', 'capture', 'dev-server-pattern', 'git', 'node', 'repo', 'services', 'state-dir', 'terminal-backend', 'tracker-adapter'].sort())
+  assert.match(by['capture'].detail, /capture\.mode = local/)
+  assert.match(by['capture'].detail, /bundled runner/, 'an unset capture.runner names what will be used instead')
   for (const p of r.payload.probes) assert.equal(typeof p.detail, 'string', `${p.name} must carry a detail`)
   assert.match(by['dev-server-pattern'].detail, /devServer\.serverProcessPattern = server\\\.mjs/)
   assert.equal(by['terminal-backend'].ok, true, 'the injected backend is what doctor probes')
@@ -580,6 +585,27 @@ test('doctor reports every probe, and ECHOES the derived rogue-server pattern fo
   assert.equal(by['state-dir'].ok, true)
   assert.equal(r.code, 0)
   assert.equal(r.payload.ok, true)
+})
+
+test('doctor calls out a local capture with no slot to capture against', async t => {
+  // ⛔ The silent combination that shipped PRs with no evidence: capture.mode local (the default)
+  // with testing.count 0 means there is no dev server anywhere to point a browser at, so every
+  // session skips capture entirely and says so nowhere. It is a FAILED probe, not a note.
+  const f = makeRepo(t, { config: { ...OK_CONFIG, testing: { count: 0 } } })
+  const r = await cli(['doctor', '--json'], f)
+  const by = Object.fromEntries(r.payload.probes.map(p => [p.name, p]))
+  assert.equal(by['capture-slot'].ok, false)
+  assert.match(by['capture-slot'].detail, /testing\.count is 0/)
+  assert.match(by['capture-slot'].hint, /silently takes no screenshots/)
+})
+
+test('doctor says nothing about capture when the repo has opted out', async t => {
+  // capture.mode none is a deliberate answer — nagging about it would train operators to ignore the probe.
+  const f = makeRepo(t, { config: { ...OK_CONFIG, capture: { mode: 'none' } } })
+  const r = await cli(['doctor', '--json'], f)
+  const names = r.payload.probes.map(p => p.name)
+  assert.ok(!names.includes('capture'), 'no capture probe')
+  assert.ok(!names.includes('capture-slot'), 'and no slot probe')
 })
 
 test('doctor answers on a machine with no terminal backend instead of refusing to run', async t => {

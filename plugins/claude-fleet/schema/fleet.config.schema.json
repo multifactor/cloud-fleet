@@ -959,7 +959,13 @@
             "string",
             "null"
           ],
-          "description": "Command that runs a capture spec against {url}.",
+          "description": "Command that runs a capture spec against {url}. Unset uses the bundled runner (capture/screenshot.mjs), which needs only a Chromium the repo or the machine already has.",
+          "x-scope": "project"
+        },
+        "reviewPdf": {
+          "type": "boolean",
+          "description": "Render the session's scratch review page to a one-page PDF and attach it to the PR on the assets branch.",
+          "default": true,
           "x-scope": "project"
         },
         "bootstrapScript": {
