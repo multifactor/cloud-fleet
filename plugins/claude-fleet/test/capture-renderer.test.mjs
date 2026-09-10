@@ -9,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url)
 
 import { chromeCandidates, noRendererMessage, loadPlaywright, selectEngine } from '../capture/browser.mjs'
 import { chromeArgs as pdfArgs, parseArgs as pdfParseArgs, renderPdf } from '../capture/review-pdf.mjs'
-import { chromeArgs as shotArgs, parseArgs as shotParseArgs, screenshot } from '../capture/screenshot.mjs'
+import { chromeArgs as shotArgs, parseArgs as shotParseArgs, screenshot, identicalPair, fileHash } from '../capture/screenshot.mjs'
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-capture-'))
 
@@ -103,4 +103,23 @@ test('auto falls back to webkit rather than failing — a Mac with one engine sh
   assert.equal(await selectEngine(webkitOnly, 'chromium'), null, 'an unbuilt engine is never selected')
   assert.equal(await selectEngine(fakePw({}), 'auto'), null, 'no engine built at all')
   assert.equal(await selectEngine(null, 'auto'), null, 'no Playwright at all')
+})
+
+test('a byte-identical before/after pair is detectable, because it is a failed capture until proven otherwise', () => {
+  // ⛔ Both real causes look the same: a stale build that re-photographed the BEFORE bundle, or a
+  // change that genuinely moves no pixels. Filing either silently files evidence that proves nothing.
+  const dir = tmp()
+  const a = path.join(dir, 'before.png')
+  const b = path.join(dir, 'after.png')
+  fs.writeFileSync(a, 'same-bytes')
+  fs.writeFileSync(b, 'same-bytes')
+  assert.equal(identicalPair(a, b), true)
+  assert.equal(fileHash(a), fileHash(b))
+
+  fs.writeFileSync(b, 'different-bytes')
+  assert.equal(identicalPair(a, b), false, 'a real visual diff is not flagged')
+
+  // A capture that never happened is not "identical" — it is missing, which is a different report.
+  assert.equal(identicalPair(a, path.join(dir, 'never-written.png')), false)
+  assert.equal(fileHash(path.join(dir, 'never-written.png')), null)
 })
