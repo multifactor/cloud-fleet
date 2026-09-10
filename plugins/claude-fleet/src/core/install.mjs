@@ -419,7 +419,17 @@ export function verifyInstall(worktree, reference, config) {
   // repair plan naming directories that are not supposed to exist, forever.
   const worktreeHash = lockfileHashOf(worktree)
   if (reference.lockfileHash !== worktreeHash) {
-    const at = h => (h ? String(h).slice(0, 16) : 'no lockfile')
+    // ⛔ A lockfile hash is `<name>:<32 hex>` (lockfileHashOf), and the old `slice(0, 16)` cut
+    // INSIDE THE NAME: both sides of a real mismatch printed "package-lock.jso", so the sentence
+    // named two identical values and called them different. An operator reading that looks for a
+    // bug in the tool, not for the branch their worktree was cut from. Keep the name whole and
+    // shorten only the digest, which is the half that actually differs.
+    const at = h => {
+      if (!h) return 'no lockfile'
+      const s = String(h)
+      const cut = s.indexOf(':')
+      return cut === -1 ? s : `${s.slice(0, cut)}@${s.slice(cut + 1, cut + 13)}`
+    }
     return {
       ok: false,
       mode,

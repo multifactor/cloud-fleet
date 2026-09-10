@@ -10,6 +10,7 @@ import {
   DEFAULT_CONFIG_FILE, parseTmuxVersion, versionAtLeast, installHint, shQuote, paneCommand, fmtEscape,
   escapeTrailingSemicolon, spawnArgs, tagArgs, parseSpawnOutput, parseListPanes, handlesFrom, sendPlan,
   resolveRef, attachPlan, isNoServer, isNoSessions,
+  viewerKind, viewerSessionName, viewerScriptText, viewerOpenArgs, osaQuote,
 } from '../src/backends/tmux.mjs'
 import { validateBackend, validateResultShape, CAPABILITY_NAMES, STATUS } from '../src/backends/types.mjs'
 import { snapshotFrom } from '../src/sys/proc.mjs'
@@ -1131,4 +1132,51 @@ describe('tmux integration (real server)', { skip: integrationSkip }, () => {
     assert.deepEqual(backend.list(), [])
     assert.deepEqual(backend.killServer(), { ok: true, hadServer: false })
   })
+})
+
+// ---- the viewer: a detached window is a fleet nobody can see -------------------------------------
+
+test('the viewer opens on a macOS desktop and stays out of the way everywhere else', () => {
+  // ⛔ `none` off-desktop is the load-bearing half: on a CI runner an osascript has no window server
+  // to talk to, so an "always open a window" viewer turns a healthy headless fleet into N failures.
+  assert.equal(viewerKind({ platform: 'darwin', env: {} }), 'terminal-app')
+  assert.equal(viewerKind({ platform: 'darwin', env: { TERM_PROGRAM: 'iTerm.app' } }), 'iterm2')
+  assert.equal(viewerKind({ platform: 'darwin', env: { CI: '1' } }), 'none')
+  assert.equal(viewerKind({ platform: 'darwin', env: { SSH_CONNECTION: 'x' } }), 'none')
+  assert.equal(viewerKind({ platform: 'linux', env: {} }), 'none')
+  assert.equal(viewerKind({ platform: 'win32', env: {} }), 'none')
+  // An explicit setting is obeyed on every platform, including "off on my Mac".
+  assert.equal(viewerKind({ configured: 'none', platform: 'darwin', env: {} }), 'none')
+  assert.equal(viewerKind({ configured: 'iterm2', platform: 'darwin', env: { CI: '1' } }), 'iterm2')
+})
+
+test('a viewer session name is a name tmux will actually take', () => {
+  // tmux splits targets on ":" and ".", so a label carrying either would address a different window.
+  assert.equal(viewerSessionName('1'), 'view-1')
+  assert.equal(viewerSessionName('check.2'), 'view-check-2')
+  assert.equal(viewerSessionName('a:b'), 'view-a-b')
+})
+
+test('the viewer script joins the session GROUP and selects only its own window', () => {
+  const text = viewerScriptText({
+    tmuxBin: '/opt/homebrew/bin/tmux', socket: 'fleet', configFile: '/plugin/tmux.conf',
+    session: 'fleet', windowId: '@7', label: '2',
+  })
+  // `-A` makes a relaunch idempotent; `-t =fleet` groups, so this window shares the fleet's windows
+  // but keeps its own current-window — that is what lets two windows show two different sessions.
+  assert.match(text, /'new-session' '-A' '-s' 'view-2' '-t' '=fleet'/)
+  assert.match(text, /select-window -t '@7'/)
+  // ⛔ Without this, a viewer opened from inside a tmux pane refuses with "sessions should be nested
+  // with care" and the operator gets an error where a session should be.
+  assert.match(text, /^unset TMUX$/m)
+  assert.match(text, /^#!\/bin\/sh$/m)
+})
+
+test('a path with a space or a quote survives the trip through AppleScript', () => {
+  assert.equal(osaQuote('/Users/a b/v.sh'), '"/Users/a b/v.sh"')
+  assert.equal(osaQuote('say "hi"'), '"say \\"hi\\""')
+  assert.equal(osaQuote('back\\slash'), '"back\\\\slash"')
+  const args = viewerOpenArgs('terminal-app', '/tmp/a b.sh')
+  assert.equal(args.at(-1), 'tell application "Terminal" to do script "/tmp/a b.sh"')
+  assert.match(viewerOpenArgs('iterm2', '/tmp/v.sh').at(-1), /^tell application "iTerm" to create window/)
 })

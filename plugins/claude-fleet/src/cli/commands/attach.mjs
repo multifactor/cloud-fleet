@@ -18,6 +18,24 @@
 import { envelope } from '../../cli.mjs'
 import { degradationNotice } from '../../backends/types.mjs'
 
+/**
+ * PURE. One argv token, safe to paste into a POSIX shell.
+ *
+ * ⛔ This is not cosmetic. tmux's exact-match prefix is `=`, so the attach target is `=fleet` — and
+ * in ZSH, THE DEFAULT MACOS SHELL, a word starting with `=` is EQUALS EXPANSION: zsh resolves
+ * `=fleet` to the path of a command called `fleet`, finds none, and the whole line dies with
+ * "zsh: fleet not found" before tmux is ever executed. The command this help printed was therefore
+ * impossible to run on a stock Mac, and the failure names a command the operator never typed, which
+ * sends them looking for a broken install instead of a quoting bug. Quoting also carries a
+ * worktree parent or plugin path that contains a space.
+ */
+export function shellQuote(token) {
+  const s = String(token)
+  // The unreserved set: no expansion, no splitting, no history, no equals expansion.
+  if (s.length > 0 && /^[A-Za-z0-9_@%+:,./-]+$/.test(s)) return s
+  return `'${s.replaceAll("'", `'\\''`)}'`
+}
+
 export const name = 'attach'
 export const usage = 'fleet attach'
 export const needsConfig = true
@@ -44,7 +62,7 @@ export async function run(ctx, args) {
   // fail with tmux's own prose. `sessionExists` is exact-match (`=name`), never a prefix.
   const exists = typeof backend.sessionExists === 'function' ? backend.sessionExists() : null
   const plan = backend.attachCommand()
-  const line = [...plan.unsetEnv.map(v => `unset ${v}`), [plan.command, ...plan.args].join(' ')].join(' && ')
+  const line = [...plan.unsetEnv.map(v => `unset ${v}`), [plan.command, ...plan.args].map(shellQuote).join(' ')].join(' && ')
 
   if (exists === false) {
     ctx.json(envelope(true, { backend: backendName, attachable: false, sessionExists: false, command: plan.command, args: plan.args, unsetEnv: plan.unsetEnv, run: line, notice: 'no fleet session is running on this backend' }))

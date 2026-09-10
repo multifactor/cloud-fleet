@@ -301,6 +301,96 @@ export function writeResolved(ctx) {
   return { file, record }
 }
 
+// ---- getting the seed prompt actually SUBMITTED --------------------------------------------------
+//
+// ⛔ The failure this exists for: `spawn` returns the instant tmux has a window, but the agent CLI
+// inside it is still booting and may open a MODAL first — a workspace-trust dialog on a worktree
+// path it has never seen, an MCP-server approval for the repo's .mcp.json. The seed prompt was sent
+// into whatever was on screen, and the Enter that should have submitted it was swallowed by that
+// dialog. Every layer then reported success: tmux accepted the keystrokes, so `send` returned
+// ok — tmux can only report delivery of a KEYSTROKE, never of the intent — and the session sat at
+// `ready`/`alive: yes` with its whole instruction sitting unsent in the input line. On `fleet status`
+// that is indistinguishable from a session with nothing to do, so a fleet that started nothing
+// looked exactly like a fleet that had finished.
+//
+// So: wait for the modal to clear, send, then PROVE the text left the input line.
+
+/** Dialogs an unattended session cannot answer by itself, and the words each is recognised by. */
+export const GATE_PATTERNS = Object.freeze([
+  { name: 'a workspace-trust dialog', re: /trust this folder|Is this a project you (created or )?trust/i },
+  { name: 'an MCP-server approval dialog', re: /MCP servers may execute code/i },
+  { name: 'a theme or onboarding prompt', re: /Choose the text style|Let's get started/i },
+])
+
+/** PURE. The gate a pane is showing, or null. */
+export function gateShowing(text) {
+  const s = String(text ?? '')
+  for (const g of GATE_PATTERNS) if (g.re.test(s)) return g.name
+  return null
+}
+
+/**
+ * PURE. Is the seed prompt still sitting in the input line rather than submitted?
+ *
+ * Compared with whitespace collapsed, because a TUI wraps the input line at the pane width and a
+ * literal substring test would miss its own text. The TAIL is the needle: the head of the prompt
+ * scrolls out of an input box, the end of it does not.
+ */
+export function stillUnsent(paneText, prompt) {
+  const flat = s => String(s ?? '').replace(/\s+/g, ' ').trim()
+  const hay = flat(paneText)
+  const needle = flat(prompt).slice(-60)
+  return needle.length > 0 && hay.includes(needle)
+}
+
+/**
+ * Wait out any gate, send the seed prompt, then confirm it was submitted — re-pressing Enter when it
+ * was not. Backends without `readText` skip the gate and the proof rather than fail: the check is an
+ * improvement where it is available, never a new requirement.
+ */
+export async function deliverSeedPrompt(backend, handle, prompt, {
+  label,
+  log = () => {},
+  sleep: nap = sleep,
+  gateMs = 300_000,
+  pollMs = 1000,
+  attempts = 3,
+  now = () => Date.now(),
+} = {}) {
+  const canRead = typeof backend.readText === 'function'
+  if (canRead) {
+    const deadline = now() + gateMs
+    let announced = null
+    for (;;) {
+      const gate = gateShowing(backend.readText(handle))
+      if (!gate) break
+      if (gate !== announced) {
+        announced = gate
+        log(`${label}: waiting on ${gate} in its window — answer it there and the session starts on its own`)
+      }
+      if (now() >= deadline) {
+        return { ok: false, requested: prompt.length, delivered: 0, truncated: false, gate, reason: `${gate} was still open after ${Math.round(gateMs / 1000)}s, so the seed prompt was never sent` }
+      }
+      await nap(pollMs)
+    }
+  }
+
+  const sent = backend.send(handle, prompt)
+  if (!sent.ok || !canRead || typeof backend.submit !== 'function') return sent
+
+  for (let i = 0; i <= attempts; i++) {
+    await nap(pollMs)
+    const text = backend.readText(handle)
+    // A pane that cannot be read proves nothing either way; treat the send as it reported itself.
+    if (text === null || !stillUnsent(text, prompt)) return sent
+    if (i === attempts) {
+      return { ...sent, ok: false, reason: `the seed prompt reached the input line but was never submitted, after ${attempts} attempts to press Enter` }
+    }
+    backend.submit(handle)
+  }
+  return sent
+}
+
 /**
  * PURE. The SpawnSpec for one session (backends/types.mjs).
  *
@@ -584,9 +674,15 @@ export async function runUp(ctx, args, { verb = 'up' } = {}) {
       // SHORT WRITE is reported instead of being read as delivery — a console input buffer takes what
       // fits and submits the fragment, and a session acting on half its instructions looks healthy.
       const prompt = buildPrompt(config, stamped, { sessionFile })
-      const sent = backend.send(handle, prompt)
+      const sent = await deliverSeedPrompt(backend, handle, prompt, {
+        label: `fleet ${verb}: ${entry.label}`,
+        log: line => ctx.log(line),
+      })
       if (!sent.ok) {
         ctx.log(`fleet ${verb}: ${entry.label}: the seed prompt was delivered as ${sent.delivered} of ${sent.requested} characters (${sent.reason || 'short write'}) — send it again with \`fleet send ${entry.label} --file <path>\` before trusting the session`)
+      }
+      if (handle && handle.viewer && handle.viewer.opened === false && handle.viewer.reason) {
+        ctx.log(`fleet ${verb}: ${entry.label}: no window was opened for this session (${handle.viewer.reason}) — it is running headless; \`fleet attach\` still reaches it`)
       }
 
       opened++

@@ -159,6 +159,7 @@ export const SCHEMA = [
   k('fleet.size', 'int', null, 'user', { derived: 'clamp(1, floor((totalRam - install.reservePhysicalGb) / install.perInstallGb), cpus)', describe: 'Default number of working sessions.' }),
   k('fleet.hardCeiling', 'int', null, 'user', { derived: 'fleet.size + 2', describe: 'Never exceeded by auto-refill.' }),
   k('fleet.agent', 'enum', 'claude', 'either', { enum: ['claude', 'codex'], describe: 'Agent CLI a session runs.' }),
+  k('fleet.permissionMode', 'enum', 'bypass', 'either', { enum: ['bypass', 'inherit'], describe: 'bypass = spawn sessions in the agent\'s bypass-permissions mode (the default: nobody is in the window to answer a permission prompt); inherit = leave the host default, and accept that a session can stop on one.' }),
   k('fleet.model', 'string', 'opus', 'either', { describe: 'Model passed explicitly to every session (an inherited default once put a whole fleet on the wrong model).' }),
   k('fleet.queue.selector.state', 'string', null, 'project', { derived: 'checker.ready.state, else the adapter\'s unstarted state', describe: 'State a ticket must be in to be picked up.' }),
   k('fleet.queue.selector.labels', 'string[]', [], 'project', { describe: 'Labels a ticket must carry to be picked up.' }),
@@ -180,6 +181,7 @@ export const SCHEMA = [
   k('terminal.layout', 'enum', 'windows', 'user', { enum: ['windows', 'tiled-panes', 'pixel-grid'], describe: 'windows = one tab/window per session; tiled-panes = tmux tiled layout; pixel-grid = Windows-only multi-monitor tiling (opt-in).' }),
   k('terminal.tmux.session', 'string', 'fleet', 'user', { describe: 'tmux session name.' }),
   k('terminal.tmux.socket', 'string', 'fleet', 'user', { describe: 'tmux socket name (-L), so the fleet never shares the user\'s server.' }),
+  k('terminal.tmux.viewer', 'enum', 'auto', 'user', { enum: ['auto', 'terminal-app', 'iterm2', 'none'], describe: 'GUI terminal opened per session so the fleet is VISIBLE (tmux creates windows detached). auto = Terminal.app or iTerm2 on a macOS desktop, none under CI/SSH and on other platforms.' }),
 
   // --- notifications ----------------------------------------------------------------------------
   k('notifications.command', 'string', null, 'user', { describe: 'Command run on fleet events with $FLEET_EVENT and $FLEET_MESSAGE set.' }),

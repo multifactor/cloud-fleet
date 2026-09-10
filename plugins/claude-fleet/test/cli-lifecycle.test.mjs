@@ -11,6 +11,7 @@ import { createFakeBackend, injectFault } from '../src/backends/fake.mjs'
 import { parseWorktreeList } from '../src/core/worktree.mjs'
 import { listSessions, readSession, sessionPath, writeSession } from '../src/core/fleet.mjs'
 import { parseArgv } from '../src/session/shim.mjs'
+import { shellQuote } from '../src/cli/commands/attach.mjs'
 import { snapshotFrom } from '../src/sys/proc.mjs'
 import { argvInFleet, buildSpawnSpec, isUpArgv, markedSessions, otherLaunchers, stampBackendRef } from '../src/cli/commands/up.mjs'
 import { readFlags } from '../src/cli/commands/status.mjs'
@@ -868,7 +869,21 @@ test('attach hands back the exact argv (and what to unset) when the backend has 
   assert.equal(r.payload.attachable, true)
   assert.equal(r.payload.command, 'tmux')
   assert.deepEqual(r.payload.unsetEnv, ['TMUX'])
-  assert.match(r.payload.run, /^unset TMUX && tmux -L fleet attach-session -t =fleet$/)
+  // ⛔ `=fleet` MUST be quoted. zsh is the default macOS shell and treats a leading `=` as equals
+  // expansion, so the unquoted line died with "zsh: fleet not found" before tmux ever ran — a
+  // failure naming a command the operator never typed. The argv stays exact; only the printed line
+  // is quoted.
+  assert.deepEqual(r.payload.args, ['-L', 'fleet', 'attach-session', '-t', '=fleet'])
+  assert.match(r.payload.run, /^unset TMUX && tmux -L fleet attach-session -t '=fleet'$/)
+})
+
+test('the printed attach line survives zsh: no equals expansion, and a path with a space stays one token', () => {
+  assert.equal(shellQuote('=fleet'), `'=fleet'`)
+  assert.equal(shellQuote('/Users/a b/tmux.conf'), `'/Users/a b/tmux.conf'`)
+  assert.equal(shellQuote("it's"), `'it'\\''s'`)
+  // Ordinary tokens are left alone, so the common line stays readable and copy-pasteable.
+  assert.equal(shellQuote('attach-session'), 'attach-session')
+  assert.equal(shellQuote('-L'), '-L')
 })
 
 // ---- watch -----------------------------------------------------------------------------------------

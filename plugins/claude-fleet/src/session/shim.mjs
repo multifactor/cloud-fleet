@@ -73,6 +73,23 @@ export const ROLES = Object.freeze(['working', 'testing', 'checker'])
 /** The agent CLIs, straight from the schema so this list can never drift from `fleet.agent`. */
 export const AGENTS = Object.freeze(SCHEMA_BY_KEY.get('fleet.agent').enum)
 
+/**
+ * The argv that puts a session in its agent's BYPASS-PERMISSIONS mode, per agent.
+ *
+ * ⛔ A fleet session is unattended by definition — its own seed prompt tells it "nobody is reading
+ * this window". A session left on the host's default mode can still stop and wait for a permission
+ * decision, and there is no one there to make one: it then sits `alive` and `ready` forever, which
+ * reads on `fleet status` exactly like a session with nothing to do. That is the same stall class as
+ * an unanswered dialog, arriving through the one door a spawn flag can close.
+ *
+ * An agent with no entry here is a spawn that FAILS rather than one that quietly runs attended —
+ * `fleet.permissionMode: inherit` is how an operator asks for the host default, explicitly.
+ */
+export const BYPASS_ARGS = Object.freeze({
+  claude: Object.freeze(['--permission-mode', 'bypassPermissions']),
+  codex: Object.freeze(['--dangerously-bypass-approvals-and-sandbox']),
+})
+
 // ---- pure ---------------------------------------------------------------------------------------
 
 /**
@@ -201,6 +218,17 @@ export function buildChildSpec(descriptor, config, { baseEnv = {}, platform = pr
   // an unknown flag to the agent CLI.
   const marker = markerFor(descriptor.label)
   const args = ['--model', String(model)]
+
+  // Unattended sessions run in bypass-permissions mode unless the operator asked for the host
+  // default. See BYPASS_ARGS: an unanswerable permission prompt is an invisible stall.
+  const permissionMode = descriptor.permissionMode || config.fleet.permissionMode || 'bypass'
+  if (permissionMode !== 'inherit') {
+    const bypass = BYPASS_ARGS[agent]
+    if (!bypass) {
+      throw new Error(`shim: no bypass-permissions argv is known for agent "${agent}" — set fleet.permissionMode to "inherit" to run it on the host default, and accept that the session can stop on a prompt nobody will answer`)
+    }
+    args.push(...bypass)
+  }
 
   const env = { ...baseEnv }
   for (const name of STRIPPED_ENV) delete env[name]

@@ -10,7 +10,7 @@ import {
   buildChildSpec, runShim, main, parseArgv, markerFor, assertDescriptor, readDescriptor,
   patchDescriptor, readResolvedConfig, parseSessionState, nextPaint, prependPath, pathKeyOf,
   scanLocks, exitRecord, lockOwnersOf, heartbeatMsFor, defaultSpawn, installSignalGuards,
-  STRIPPED_ENV, HEARTBEAT_MS,
+  STRIPPED_ENV, HEARTBEAT_MS, AGENTS, BYPASS_ARGS,
 } from '../src/session/shim.mjs'
 import { hasSessionMarker, sessionLabelOf } from '../src/sys/proc.mjs'
 import { tryAcquire, readHolder } from '../src/sys/lock.mjs'
@@ -144,6 +144,26 @@ test('the model is always on the command line, and a fleet with no model refuses
   assert.throws(() => buildChildSpec({ ...s.descriptor, agent: 'bash' }, cfg()), /unknown agent/)
 })
 
+test('an unattended session is spawned in bypass-permissions mode, and "inherit" is the only way out', t => {
+  // ⛔ Nobody is in the window. A session left on the host's default mode can stop on a permission
+  // prompt no one will ever answer, and it then reads on `fleet status` as alive, ready and idle —
+  // the same picture as a session with nothing left to do.
+  const s = setup(t)
+  assert.deepEqual(buildChildSpec(s.descriptor, cfg()).args, ['--model', 'opus', '--permission-mode', 'bypassPermissions'])
+  // The model comes first: the flags are independent, but the model assertion above pins the order.
+  assert.deepEqual(
+    buildChildSpec(s.descriptor, cfg({ 'fleet.permissionMode': 'inherit' })).args,
+    ['--model', 'opus'],
+    'inherit is explicit, and leaves the agent on the host default',
+  )
+  // Every agent the schema allows must have a bypass argv, or the default mode cannot be honoured.
+  for (const agent of AGENTS) {
+    const args = buildChildSpec({ ...s.descriptor, agent }, cfg({ 'fleet.agent': agent })).args
+    assert.ok(args.length > 2, `${agent} must carry a bypass-permissions argv, not just the model`)
+    assert.deepEqual(args.slice(2), [...BYPASS_ARGS[agent]], `${agent}'s bypass argv reaches the command line verbatim`)
+  }
+})
+
 test('a testing session carries its own slot and port, and refuses to start without them', t => {
   // {port} is otherwise only a URL placeholder, so a fixed-port project cannot start a second slot.
   const s = setup(t, { role: 'testing', extra: { slot: 2, branch: 'testing-2', port: 3001 } })
@@ -245,7 +265,7 @@ test('runShim registers itself, spawns the agent in the worktree, then records t
   assert.equal(agent.calls.length, 1)
   assert.equal(agent.calls[0].cwd, s.worktree)
   assert.equal(agent.calls[0].stdio, 'inherit')
-  assert.deepEqual(agent.calls[0].args, ['--model', 'opus'], 'the marker stays on the shim, not the agent')
+  assert.deepEqual(agent.calls[0].args, ['--model', 'opus', '--permission-mode', 'bypassPermissions'], 'the marker stays on the shim, not the agent; the model and the bypass mode are the only agent flags')
   for (const name of STRIPPED_ENV) assert.equal(name in agent.calls[0].env, false)
   // and out of the shim's own environment too, so nothing else the session spawns inherits them
   for (const name of STRIPPED_ENV) assert.equal(name in baseEnv, false)
