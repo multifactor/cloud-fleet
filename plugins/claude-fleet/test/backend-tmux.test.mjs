@@ -1172,6 +1172,22 @@ test('the viewer script joins the session GROUP and selects only its own window'
   assert.match(text, /^#!\/bin\/sh$/m)
 })
 
+test('a view dies with the window it views, instead of drifting onto a surviving session', () => {
+  // ⛔ The bug this closes: a grouped session shares the fleet's WHOLE window list, so killing the
+  // session's window does not end the view — tmux moves the client to another window. After a
+  // reclaim the operator was left with stale terminals all showing the same surviving session,
+  // reporting a fleet still busy with work that had finished.
+  const text = viewerScriptText({
+    tmuxBin: '/opt/homebrew/bin/tmux', socket: 'fleet', configFile: '/plugin/tmux.conf',
+    session: 'fleet', windowId: '@7', label: '3',
+  })
+  assert.match(text, /list-windows -a -F '#\{window_id\}'/, 'it watches for the window id')
+  assert.match(text, /grep -qx '@7'/, 'exactly that window, never a prefix match')
+  assert.match(text, /kill-session -t '=view-3'/, 'and ends its own view when the window is gone')
+  // The watchdog must not block the attach: the view has to come up immediately.
+  assert.match(text, /done &&\n.*kill-session[^\n]*&\n/s, 'the watchdog is backgrounded')
+})
+
 test('a path with a space or a quote survives the trip through AppleScript', () => {
   assert.equal(osaQuote('/Users/a b/v.sh'), '"/Users/a b/v.sh"')
   assert.equal(osaQuote('say "hi"'), '"say \\"hi\\""')

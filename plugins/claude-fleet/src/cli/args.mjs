@@ -45,6 +45,7 @@ export const FLAGS = Object.freeze({
   'sweep-id': 'value',
   'dry-run': 'boolean',
   'no-wizard': 'boolean',
+  'no-watch': 'boolean',
   // fleet send / flag / session env
   file: 'value',
   label: 'value',

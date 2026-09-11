@@ -41,9 +41,11 @@ import { writeTextAtomic } from '../../watchers/guardian.mjs'
 import { WATCH_ENTRY_FILES } from '../../supervisor/loop.mjs'
 import { findByCommand, sessionLabelOf, tokenize } from '../../sys/proc.mjs'
 import { snapshot as takeSnapshot } from '../../sys/snapshot.mjs'
+import { spawn as spawnProcess } from 'node:child_process'
+import { WATCH_PATTERN, isWatchArgv } from '../../supervisor/loop.mjs'
 
 export const name = 'up'
-export const usage = 'fleet up [n] [--testing k] [--issues A,B] [--add k] [--role working|checker] [--sweep-id s] [--dry-run] [--no-wizard]'
+export const usage = 'fleet up [n] [--testing k] [--issues A,B] [--add k] [--role working|checker] [--sweep-id s] [--dry-run] [--no-wizard] [--no-watch]'
 export const needsConfig = true
 // A command that opens windows has no answer without a terminal, so selection failing here IS the
 // right answer — including under --dry-run, whose plan would otherwise promise windows this machine
@@ -52,6 +54,9 @@ export const needsBackend = true
 
 /** The shim every session window runs: `node shim.mjs --fleet-session=<label> <descriptor.json>`. */
 export const SHIM = fileURLToPath(new URL('../../session/shim.mjs', import.meta.url))
+
+/** The CLI entry the supervisor is spawned from — the same file this command is served by. */
+export const CLI_ENTRY = fileURLToPath(new URL('../../cli.mjs', import.meta.url))
 
 /** The statuses that make a launch impossible, as opposed to the two the wizard is still walking. */
 const BLOCKING_STATUS = Object.freeze(['needs-init', 'needs-machine', 'invalid', 'unmigrated'])
@@ -315,6 +320,35 @@ export function writeResolved(ctx) {
 //
 // So: wait for the modal to clear, send, then PROVE the text left the input line.
 
+/**
+ * The agent has finished booting and is showing its input line.
+ *
+ * ⛔ WITHOUT THIS, AN EMPTY PANE READS AS SUCCESS. `spawn` returns when tmux has a window, but the
+ * agent CLI needs ten to thirty seconds to paint anything. The seed prompt was pasted into that gap,
+ * the Enter that `send` appends was swallowed by a CLI not yet reading keys, and the delivery check —
+ * polling for four seconds — looked at a blank pane, found none of its own text sitting in an input
+ * line, and concluded the prompt had been submitted. The session then sat idle for ever with the
+ * whole instruction in its input box, which is the exact failure the check exists to catch.
+ *
+ * So: wait for the input line to EXIST before typing into it. These markers are the agent's own
+ * status line — the mode indicator and the interrupt hint every turn paints.
+ */
+export const READY_PATTERNS = Object.freeze([
+  // The input line itself — the one marker that does not depend on which agent, which version, or
+  // which mode is on. A readiness test built only from status-line wording hangs for the full gate
+  // on any agent whose wording is not in the list, which is worse than the race it replaces.
+  /^\s*[❯>]/m,
+  /bypass permissions on|auto mode on|accept edits on|plan mode on/i,
+  /esc to interrupt/i,
+  /shift\+tab to cycle/i,
+])
+
+/** PURE. Is the agent showing its input line yet? */
+export function agentReady(text) {
+  const s = String(text ?? '')
+  return READY_PATTERNS.some(re => re.test(s))
+}
+
 /** Dialogs an unattended session cannot answer by itself, and the words each is recognised by. */
 export const GATE_PATTERNS = Object.freeze([
   { name: 'a workspace-trust dialog', re: /trust this folder|Is this a project you (created or )?trust/i },
@@ -361,16 +395,31 @@ export async function deliverSeedPrompt(backend, handle, prompt, {
   sleep: nap = sleep,
   gateMs = 300_000,
   pollMs = 1000,
-  attempts = 3,
+  attempts = 8,
   now = () => Date.now(),
 } = {}) {
   const canRead = typeof backend.readText === 'function'
   if (canRead) {
     const deadline = now() + gateMs
     let announced = null
+    let waitedForBoot = false
     for (;;) {
-      const gate = gateShowing(backend.readText(handle))
-      if (!gate) break
+      const text = backend.readText(handle)
+      const gate = gateShowing(text)
+      if (!gate) {
+        // ⛔ No gate is not the same as ready. A pane that has painted nothing yet has no dialog in
+        // it either, and typing into that is how the prompt ends up in an input line nobody submits.
+        if (agentReady(text)) break
+        if (now() >= deadline) {
+          return { ok: false, requested: prompt.length, delivered: 0, truncated: false, gate: null, reason: `the agent never showed an input line within ${Math.round(gateMs / 1000)}s, so the seed prompt was never sent` }
+        }
+        if (!waitedForBoot) {
+          waitedForBoot = true
+          log(`${label}: waiting for the agent to finish starting before sending its assignment`)
+        }
+        await nap(pollMs)
+        continue
+      }
       if (gate !== announced) {
         announced = gate
         log(`${label}: waiting on ${gate} in its window — answer it there and the session starts on its own`)
@@ -386,7 +435,10 @@ export async function deliverSeedPrompt(backend, handle, prompt, {
   if (!sent.ok || !canRead || typeof backend.submit !== 'function') return sent
 
   for (let i = 0; i <= attempts; i++) {
-    await nap(pollMs)
+    // ⛔ Two seconds, eight times. The first check used to run one second after the paste and give up
+    // after four — inside the window where the agent is still rendering, which is precisely when a
+    // swallowed Enter looks like a delivered prompt.
+    await nap(pollMs * 2)
     const text = backend.readText(handle)
     // A pane that cannot be read proves nothing either way; treat the send as it reported itself.
     if (text === null || !stillUnsent(text, prompt)) return sent
@@ -742,7 +794,43 @@ export async function runUp(ctx, args, { verb = 'up' } = {}) {
     }))
   printTable(rows, ctx.log)
   if (installs) ctx.log(`fleet ${verb}: ${installs.queued} install(s) in ${installs.waves} wave(s); ${installs.failed.length} failed`)
+  if (!args.flags['no-watch']) {
+    const sup = startSupervisor(ctx)
+    if (sup.started) ctx.log(`fleet ${verb}: supervisor started (pid ${sup.pid}) — it reclaims a session as soon as it flags done`)
+    else if (sup.pid) ctx.log(`fleet ${verb}: supervisor already running (pid ${sup.pid})`)
+    else ctx.log(`fleet ${verb}: no supervisor could be started (${sup.reason}) — finished sessions will stay open until you run \`fleet watch\``)
+  }
   return ok ? 0 : 1
+}
+
+/**
+ * Start the supervisor, unless one is already running.
+ *
+ * ⛔ THE SUPERVISOR IS WHAT CLOSES A FINISHED SESSION. It reclaims a `done` flag — kills the window,
+ * verifies zero survivors, removes the worktree — and it also reaps stale locks, restarts a dead
+ * testing server and tree-kills rogue dev servers. The playbook told the OPERATOR to start it
+ * ("right after `fleet up`"), which means every launch that forgets leaves finished sessions sitting
+ * open for ever, each one reading on `fleet status` as a healthy idle session. Forgetting a
+ * documented manual step is not an operator failure; it is a launcher that should have done it.
+ *
+ * Detached and stdio-ignored on purpose: it must outlive this process, which exits as soon as the
+ * fleet is up. A supervisor that is already running is left alone — loop.instanceDecision resolves
+ * duplicates by age anyway, but not spawning one is cheaper than racing it.
+ */
+export function startSupervisor(ctx, { spawn = spawnProcess, snapshot = null, node = process.execPath, entry = CLI_ENTRY } = {}) {
+  const snap = snapshot || safeSnapshot()
+  const running = snap && snap.size
+    ? findByCommand(snap, WATCH_PATTERN, { selfPid: process.pid }).filter(p => isWatchArgv(p.cmd))
+    : []
+  if (running.length) return { started: false, pid: running[0].pid, reason: 'a supervisor is already running' }
+  try {
+    const child = spawn(node, [entry, 'watch'], { cwd: ctx.cwd, detached: true, stdio: 'ignore' })
+    child.unref()
+    return { started: true, pid: child.pid, reason: null }
+  } catch (e) {
+    // Never fatal: a fleet with no supervisor still works, it just does not tidy up after itself.
+    return { started: false, pid: null, reason: e && e.message ? e.message : String(e) }
+  }
 }
 
 /**

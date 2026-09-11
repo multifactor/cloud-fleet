@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { deliverSeedPrompt, gateShowing, stillUnsent } from '../src/cli/commands/up.mjs'
+import { deliverSeedPrompt, gateShowing, stillUnsent, agentReady } from '../src/cli/commands/up.mjs'
 
 // The failure every test here is about: `spawn` returns as soon as tmux has a window, but the agent
 // CLI inside it may still be showing a modal. The seed prompt goes into that modal, the Enter is
@@ -27,6 +27,13 @@ function fakeBackend(screens, { canSubmit = true } = {}) {
 }
 
 const nap = () => Promise.resolve()
+
+/**
+ * A clock that always advances. ⛔ Every deliverSeedPrompt call here is given one: a readiness test
+ * that never matches spins on the real clock for the whole gate, and a five-minute hang inside a unit
+ * suite reads as a broken test runner rather than as the bug it is.
+ */
+const bounded = () => { let t = 0; return () => (t += 50) }
 
 test('the dialogs a session cannot answer are recognised by name', () => {
   assert.equal(gateShowing('Is this a project you trust?\n 1. Yes, I trust this folder'), 'a workspace-trust dialog')
@@ -80,7 +87,7 @@ test('the prompt waits for a trust dialog to clear, and is only sent once it has
     '⏺ working now',
   ])
   const lines = []
-  const r = await deliverSeedPrompt(backend, {}, PROMPT, { label: 'fleet up: 1', log: l => lines.push(l), sleep: nap })
+  const r = await deliverSeedPrompt(backend, {}, PROMPT, { label: 'fleet up: 1', log: l => lines.push(l), sleep: nap, gateMs: 200, now: bounded() })
   assert.equal(r.ok, true)
   assert.deepEqual(backend.calls.sends, [PROMPT], 'sent exactly once, after the gate cleared')
   assert.equal(lines.length, 1, 'the operator is told once, not once per poll')
@@ -93,7 +100,7 @@ test('a prompt left sitting in the input line is re-submitted, not called delive
   // Read 1 is the gate check (no gate, so the prompt is sent); reads 2 and 3 still show the text
   // sitting in the input line, read 4 shows it gone.
   const backend = fakeBackend(['❯ ready for input', stuck, stuck, '⏺ off it goes'])
-  const r = await deliverSeedPrompt(backend, {}, PROMPT, { label: '1', sleep: nap })
+  const r = await deliverSeedPrompt(backend, {}, PROMPT, { label: '1', sleep: nap, gateMs: 200, now: bounded() })
   assert.equal(r.ok, true)
   assert.equal(backend.calls.submits, 2, 'Enter is pressed again until the text leaves the input line')
   assert.deepEqual(backend.calls.sends, [PROMPT], 'the prompt itself is never sent twice')
@@ -101,7 +108,7 @@ test('a prompt left sitting in the input line is re-submitted, not called delive
 
 test('a prompt that will not submit is reported as a failure, not as a healthy session', async () => {
   const backend = fakeBackend([`❯ ${PROMPT}`])
-  const r = await deliverSeedPrompt(backend, {}, PROMPT, { label: '1', sleep: nap, attempts: 2 })
+  const r = await deliverSeedPrompt(backend, {}, PROMPT, { label: '1', sleep: nap, attempts: 2, gateMs: 200, now: bounded() })
   assert.equal(r.ok, false)
   assert.match(r.reason, /reached the input line but was never submitted/)
   assert.equal(backend.calls.submits, 2)
@@ -122,7 +129,50 @@ test('a backend that cannot read its panes keeps the old behaviour rather than f
   // Windows Terminal has no capture; the gate is an improvement where it exists, never a new floor.
   const calls = []
   const blind = { send: (_h, t) => { calls.push(t); return { ok: true, requested: t.length, delivered: t.length, truncated: false } } }
-  const r = await deliverSeedPrompt(blind, {}, PROMPT, { label: '1', sleep: nap })
+  const r = await deliverSeedPrompt(blind, {}, PROMPT, { label: '1', sleep: nap, gateMs: 200, now: bounded() })
   assert.equal(r.ok, true)
   assert.deepEqual(calls, [PROMPT])
+})
+
+
+test('a pane that has painted NOTHING is not ready, and is never mistaken for a delivered prompt', () => {
+  // ⛔ The regression. `spawn` returns when tmux has a window, but the agent needs 10-30s to paint.
+  // The prompt was pasted into that gap, the Enter `send` appends was swallowed by a CLI not yet
+  // reading keys, and the check — polling for four seconds — looked at a BLANK pane, found none of
+  // its own text in an input line, and called that success. The session then sat idle for ever with
+  // its whole assignment sitting unsent.
+  assert.equal(agentReady(''), false, 'an empty pane is not ready')
+  assert.equal(agentReady('SessionStart:startup hook error\nFailed with non-blocking status code'), false, 'a booting pane is not ready')
+  assert.equal(agentReady('  ⏵⏵ bypass permissions on (shift+tab to cycle)'), true)
+  assert.equal(agentReady('  ⏵⏵ auto mode on · esc to interrupt'), true)
+})
+
+test('the prompt waits for the agent to finish booting before it is typed', async () => {
+  const screens = ['', 'SessionStart:startup hook error', '  ⏵⏵ bypass permissions on', '⏺ off it goes']
+  const calls = { sends: [], submits: 0 }
+  const backend = {
+    calls,
+    readText: () => (screens.length > 1 ? screens.shift() : screens[0]),
+    send: (_h, t) => { calls.sends.push(t); return { ok: true, requested: t.length, delivered: t.length, truncated: false } },
+    submit: () => { calls.submits++; return { ok: true, reason: null } },
+  }
+  const lines = []
+  const r = await deliverSeedPrompt(backend, {}, PROMPT, { label: '1', log: l => lines.push(l), sleep: () => Promise.resolve(), gateMs: 200, now: bounded() })
+  assert.equal(r.ok, true)
+  assert.deepEqual(calls.sends, [PROMPT], 'sent once, and only after the input line existed')
+  assert.match(lines.join('\n'), /waiting for the agent to finish starting/)
+})
+
+test('an agent that never paints anything fails the delivery instead of reporting success', async () => {
+  let now = 0
+  const backend = {
+    readText: () => '',
+    send: () => { throw new Error('must never be reached: nothing was ready to type into') },
+    submit: () => ({ ok: true }),
+  }
+  const r = await deliverSeedPrompt(backend, {}, PROMPT, {
+    label: '1', sleep: () => Promise.resolve(), gateMs: 5000, now: () => (now += 1000),
+  })
+  assert.equal(r.ok, false)
+  assert.match(r.reason, /never showed an input line/)
 })
