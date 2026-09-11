@@ -543,12 +543,32 @@ promotion step; a session touching them corrupts the gate that decides what gets
 
 ### 10.5 Write the capture spec (skip when `capture.mode` is `none` or the issue has no UI)
 
+⛔ **PROVE THE ROUTE BEFORE YOU CONCLUDE ANYTHING ABOUT THE STACK.** Fetch the exact URL you intend
+to photograph and read its STATUS CODE — one `curl -o /dev/null -w '%{http_code}'` per screen, first,
+every time. A session once decided its slot was unusable because the app's *API* half was down, spent
+an hour trying to stand up a second stack, exhausted the machine's memory four times over and filed
+`blocked` — while all three pages its ticket touched were serving **200 on the slot it already
+held**. It never asked them. The screens a ticket touches are the only ones whose health matters.
+
+⛔ **`capture.loginUrlTemplate` NULL MEANS NO SIGN-IN ROUTE IS CONFIGURED — NOT THAT YOU SHOULD
+INVENT ONE.** Decide from the SCREEN, not from habit: a marketing page, a blog post, docs or an error
+state needs no session, so navigate the slot URL directly and do not go hunting for an authenticated
+stack that does not exist. If the screen genuinely is behind sign-in and no template is configured,
+that is a CONFIG GAP and it is the launcher's to close — flag `other`, naming the screen and the
+missing key. Do not hand-roll a login, and do not seed a database to get around one.
+
+⛔ **NEVER BUILD OR BOOT A SECOND STACK TO GET A SCREENSHOT.** Not the repo's e2e harness, not a
+production build, not another dev server. Section 3's rule is absolute: if the slot cannot serve the
+screen, that is a `dev-server` flag and the launcher's job. A build big enough to photograph is a
+build big enough to take the machine down, and it takes every other session with it.
+
 Your screenshots are taken by a runner (`capture.runner`) executing a script **you author now**, in
 the capture directory inside this worktree (`vcs.captureDirTemplate`, default `.fleet-capture/<KEY>/`):
 
 - **The spec** — a browser-automation script that takes its **base URL** and **output directory**
   from the runner (the runner substitutes `{url}`; never hard-code a host), signs in through
-  `capture.loginUrlTemplate` rendered with `{base}` = that URL and `{account}` = one of
+  `capture.loginUrlTemplate` **when one is configured** — rendered with `{base}` = that URL and
+  `{account}` = one of
   `capture.accounts` (isolated identities the project provisions for screenshots), drives to the
   affected screens, and writes PNGs into the output directory. The same script is run twice — once on
   the clean base branch (**before**) and once on your branch (**after**) — so keep it phase-agnostic.
