@@ -79,8 +79,8 @@ When an incident produces a rule, put the rule somewhere it can be *executed* ra
 **One caveat first, because it decides what an afternoon with this looks like.** The fleet half runs. Nineteen commands dispatch, and `up`, `status` and `down` are verified end to end against a scratch repository: worktrees created and installed, sessions spawned and registered, processes killed deepest-first, worktrees removed, leftovers swept. The sweep half is not wired. Its twelve modules are built and tested — the worklist, the ledger, the four-count reconciler, the attach-strategy chooser — but no `fleet check` verb dispatches to them, so `/fleet-check` answers `unknown command`. You can fan out a fleet today. You cannot yet run a sweep.
 
 ```
-/plugin marketplace add <owner>/claude-qa-skills
-/plugin install claude-fleet@claude-qa-skills
+/plugin marketplace add multifactor/cloud-fleet
+/plugin install claude-fleet@cloud-fleet
 ```
 
 It configures itself on first run. The launcher opens with a status check that takes a few hundred milliseconds and never writes; if the project or the machine is unconfigured, a wizard detects the tracker from the MCP tools live in the session, ranks bootstrap and dev commands out of `package.json`, sizes the fleet with the arithmetic shown, and presents the lot as one table with a source column.
