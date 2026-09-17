@@ -9,7 +9,7 @@ a bug. Keep it boring and exact.
 
 | thing | name |
 | --- | --- |
-| plugin | `claude-fleet` (marketplace `claude-qa-skills`) |
+| plugin | `claude-fleet` (marketplace `cloud-fleet`) |
 | commands | `/fleet` (work tickets), `/fleet-check` (review PRs, file gated tickets) |
 | CLI | `node "${CLAUDE_PLUGIN_ROOT}/src/cli.mjs" <cmd>`; humans: `npx claude-fleet <cmd>`. Written as `fleet <cmd>` in prose. **Never a bare `fleet` bin** (collides with Rancher Fleet / fleetctl). |
 | env prefix | `FLEET_` — one prefix, no aliases carried over from the private original |
@@ -55,7 +55,7 @@ and grep the fixtures.
 ## 2. Repository layout
 
 ```
-claude-qa-skills/
+cloud-fleet/
   .claude-plugin/marketplace.json
   LICENSE (MIT) · README.md · CONTRIBUTING.md · SECURITY.md · .github/workflows/ci.yml
   plugins/claude-fleet/

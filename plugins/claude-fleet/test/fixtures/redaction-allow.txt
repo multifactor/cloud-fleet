@@ -3,9 +3,9 @@
 #
 # The repository's own address. You cannot document installing the plugin without naming the GitHub
 # org that hosts it; the org name is not a product name and appears nowhere else.
-multifactor-apps/claude-qa-skills
-github.com/multifactor-apps/claude-qa-skills
-https://github.com/multifactor-apps/claude-qa-skills
+multifactor/cloud-fleet
+github.com/multifactor/cloud-fleet
+https://github.com/multifactor/cloud-fleet
 # Placeholder tool identifiers used by the spec and the adapter template to show the SHAPE of a
 # tool name. They name no real server.
 mcp__example__

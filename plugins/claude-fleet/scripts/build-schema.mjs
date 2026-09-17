@@ -24,7 +24,7 @@ const TYPE = {
 export function buildJsonSchema(schema = SCHEMA) {
   const root = {
     $schema: 'http://json-schema.org/draft-07/schema#',
-    $id: 'https://raw.githubusercontent.com/multifactor-apps/claude-qa-skills/main/plugins/claude-fleet/schema/fleet.config.schema.json',
+    $id: 'https://raw.githubusercontent.com/multifactor/cloud-fleet/main/plugins/claude-fleet/schema/fleet.config.schema.json',
     title: 'claude-fleet configuration',
     description: 'Project layer: <repo>/.fleet/config.json. User layer: per-machine claude-fleet/config.json. Every key declares a scope; a user-scope key in a committed file is ignored, a secret one is an error.',
     type: 'object',

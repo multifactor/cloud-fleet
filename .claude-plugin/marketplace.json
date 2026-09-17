@@ -1,5 +1,5 @@
 {
-  "name": "claude-qa-skills",
+  "name": "cloud-fleet",
   "description": "QA skills for Claude Code: fan out parallel sessions over git worktrees and drive them from any issue tracker; review PRs for edge cases and file each gap as a gated ticket.",
   "owner": { "name": "Multifactor" },
   "plugins": [

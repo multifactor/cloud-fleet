@@ -1,6 +1,6 @@
 # Contributing
 
-This repository is the marketplace `claude-qa-skills` and the one plugin it ships, `claude-fleet`.
+This repository is the marketplace `cloud-fleet` and the one plugin it ships, `claude-fleet`.
 Everything below is about that plugin: where its parts live, how to run its tests on a bare clone,
 which files are generated, and the two gates that decide whether your prose may be published.
 
@@ -59,7 +59,7 @@ failure. All of those are verifiable today.
 `✔` exists · `·` not written yet.
 
 ```
-claude-qa-skills/
+cloud-fleet/
   .claude-plugin/marketplace.json                                  ✔
   LICENSE (MIT) · README.md · CONTRIBUTING.md · SECURITY.md        ✔
   .github/workflows/ci.yml                                         ✔  unit · redaction · integration-tmux

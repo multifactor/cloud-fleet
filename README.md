@@ -1,4 +1,4 @@
-# claude-qa-skills
+# cloud-fleet
 
 QA skills for Claude Code, shipped as one plugin: **`claude-fleet`**.
 
@@ -129,8 +129,8 @@ and `fleet doctor --repair` fixes what it can on either platform.
 In Claude Code:
 
 ```
-/plugin marketplace add multifactor-apps/claude-qa-skills
-/plugin install claude-fleet@claude-qa-skills
+/plugin marketplace add multifactor/cloud-fleet
+/plugin install claude-fleet@cloud-fleet
 ```
 
 Then set the **user settings a plugin cannot set**, in your Claude Code user `settings.json` (it lives in
